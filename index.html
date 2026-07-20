@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>EarnHive</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#0b0a10;
+    --bg-1:#0f0e16;
+    --bg-2:#15131f;
+    --accent-purple:#8b7bd8;
+    --accent-purple-soft:#8b7bd8;
+    --accent-cyan:#6bb8c9;
+    --accent-gold:#c9a876;
+    --accent-gold-soft:#d9bd94;
+    --accent-pink:#8b7bd8;
+    --text-hi:#ffffff;
+    --text-mid:rgba(255,255,255,0.5);
+    --text-low:rgba(255,255,255,0.35);
+    --danger:#e0788a;
+    --success:#6bb8c9;
+    --radius-lg:20px;
+    --radius-md:14px;
+    --radius-sm:10px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; height:100%;}
+  body{
+    background: var(--bg-0);
+    color:var(--text-hi);
+    font-family:'Manrope', sans-serif;
+    min-height:100vh;
+    padding-bottom:92px;
+    overflow-x:hidden;
+  }
+  h1,h2,h3,.display{ font-family:'Sora', sans-serif; }
+
+  /* ---------- Balanced Vibrant: no aurora/particles, just the hero card glow ---------- */
+  .hex-bg{ display:none; }
+  .particle{ display:none; }
+
+  .app{ position:relative; z-index:1; padding:20px 18px 0; }
+
+  /* ---------- Header ---------- */
+  .topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  .profile-avatar{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0;
+    background:linear-gradient(135deg, var(--accent-purple-soft), var(--accent-cyan));
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Sora', sans-serif; font-weight:800; font-size:14px; color:#1a1220;
+    border:2px solid rgba(255,255,255,0.15); overflow:hidden;
+    background-size:cover; background-position:center;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-hex{
+    width:34px; height:34px;
+    background:linear-gradient(135deg, var(--accent-purple-soft), var(--accent-cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .brand-name{ font-weight:700; font-size:19px; letter-spacing:0.2px; }
+  .brand-name span{ color:var(--accent-cyan); }
+  .lang-pill{
+    display:flex; gap:4px; background:var(--bg-2); border-radius:999px; padding:4px;
+  }
+  .lang-pill button{
+    border:none; background:transparent; color:var(--text-low); font-size:12px; font-weight:600;
+    padding:6px 10px; border-radius:999px; cursor:pointer;
+  }
+  .lang-pill button.active{ background:var(--accent-purple); color:#fff; }
+
+  /* ---------- Balance hero: left-aligned flat card (Refined) ---------- */
+  .hero{
+    padding:20px 22px; border-radius:20px; position:relative;
+    background:var(--bg-2);
+    border:1px solid rgba(255,255,255,0.08);
+    overflow:hidden;
+  }
+  .hex-balance-wrap{ display:none; }
+  .hero-label{ color:var(--text-low); font-size:12px; letter-spacing:1.5px; text-transform:uppercase; font-weight:600; position:relative; z-index:1; }
+  .hero-balance{
+    font-family:'Sora', sans-serif; font-size:42px; font-weight:800; margin:8px 0 2px; letter-spacing:-1px; position:relative; z-index:1;
+    background:linear-gradient(90deg, #fff, var(--accent-purple-soft), var(--accent-cyan), #fff);
+    background-size:300% auto; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:colorShift 6s ease-in-out infinite;
+  }
+  @keyframes colorShift{
+    0%{ background-position:0% center; }
+    50%{ background-position:100% center; }
+    100%{ background-position:0% center; }
+  }
+  .hero-balance span{ font-size:19px; opacity:0.6; -webkit-text-fill-color:#fff; vertical-align:top; }
+  .hero-sub{ color:var(--text-mid); font-size:11px; font-weight:600; position:relative; z-index:1; }
+
+  .stat-row{ display:flex; gap:10px; margin-top:18px; position:relative; z-index:1; }
+  .stat-chip{
+    flex:1; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);
+    border-radius:var(--radius-md); padding:10px 6px; text-align:center; transition:border-color 0.2s ease;
+  }
+  .stat-chip .num{ font-weight:700; font-size:16px; font-family:'Sora'; }
+  .stat-chip .label{ font-size:10.5px; color:var(--text-low); margin-top:2px; }
+
+  /* ---------- Universal press feedback ---------- */
+  .task-btn:active, .link-actions button:active, .submit-btn:active,
+  .method-card:active, .nav-item:active .nav-icon, .lang-pill button:active{
+    transform:scale(0.94);
+  }
+  .task-btn, .link-actions button, .submit-btn, .method-card, .nav-icon, .lang-pill button{
+    transition:transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  /* ---------- Section titles ---------- */
+  .section-title{
+    display:flex; align-items:center; gap:8px; margin:26px 0 12px;
+    color:var(--text-mid); font-size:13px; letter-spacing:1.2px; text-transform:uppercase; font-weight:600;
+  }
+  .section-title::before{
+    content:""; width:8px; height:8px; flex-shrink:0;
+    background:linear-gradient(135deg, var(--accent-purple-soft), var(--accent-cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .section-title::after{ content:""; flex:1; height:1px; background:rgba(255,255,255,0.08); }
+
+  /* ---------- Task cards ---------- */
+  .task-card{
+    display:flex; align-items:center; gap:14px;
+    background:var(--bg-2); border:1px solid rgba(255,255,255,0.06);
+    border-radius:var(--radius-md); padding:14px; margin-bottom:10px;
+    position:relative; overflow:hidden;
+  }
+  .task-card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }
+  .task-card.channel-card::before{ background:var(--accent-purple-soft); }
+  .task-card.ad-card::before{ background:var(--accent-cyan); }
+  .task-card{ transition:border-color 0.2s ease, transform 0.15s ease; }
+  .task-card:active{ transform:scale(0.985); }
+  .task-icon{
+    width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+    font-size:19px; flex-shrink:0;
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .task-icon.join{ background:rgba(255,255,255,0.06); }
+  .task-icon.web{ background:rgba(255,255,255,0.06); }
+  .task-icon.ad{ background:rgba(255,255,255,0.06); }
+  .task-info{ flex:1; min-width:0; }
+  .task-title{ font-weight:600; font-size:14.5px; }
+  .task-reward{ font-size:12.5px; color:var(--text-mid); margin-top:2px; }
+  .task-btn{
+    border:none; padding:9px 17px; border-radius:12px; font-weight:700; font-size:12.5px;
+    background:linear-gradient(135deg, var(--accent-purple-soft), var(--accent-cyan)); color:var(--bg-0); cursor:pointer; white-space:nowrap;
+  }
+  .task-btn:disabled{ background:rgba(255,255,255,0.08); color:var(--text-low); box-shadow:none; }
+  .task-btn.done{ background:rgba(255,255,255,0.06); color:var(--accent-cyan); box-shadow:none; }
+
+  /* ---------- Referral / Hive tree ---------- */
+  .link-box{
+    background:var(--bg-2); border:1px dashed rgba(255,255,255,0.15); border-radius:var(--radius-md);
+    padding:12px 14px; font-size:12px; color:var(--text-mid); word-break:break-all; margin-bottom:10px;
+  }
+  .link-actions{ display:flex; gap:10px; }
+  .link-actions button{
+    flex:1; padding:12px; border:none; border-radius:var(--radius-sm); font-weight:700; font-size:13.5px; cursor:pointer;
+  }
+  .btn-share{ background:linear-gradient(135deg, var(--accent-purple), var(--accent-purple-soft)); color:#fff; box-shadow:0 6px 18px rgba(124,77,255,0.3); }
+  .btn-copy{ background:linear-gradient(135deg, var(--accent-cyan), #6be0ff); color:#04283a; box-shadow:0 6px 18px rgba(58,200,255,0.25); }
+
+  /* ---------- Empire hero card ---------- */
+  .empire-card{
+    background:linear-gradient(160deg, var(--bg-2), var(--bg-1));
+    border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-lg);
+    padding:22px; text-align:center; margin-bottom:16px;
+  }
+  .empire-label{ color:var(--text-low); font-size:12px; letter-spacing:1.5px; text-transform:uppercase; font-weight:700; }
+  .empire-total{
+    font-family:'Sora', sans-serif; font-size:52px; font-weight:800; margin:8px 0 2px;
+    background:linear-gradient(90deg, var(--accent-purple-soft), var(--accent-cyan));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .empire-sub{ color:var(--text-mid); font-size:12.5px; margin-bottom:16px; }
+  .empire-stat-row{ display:flex; background:rgba(0,0,0,0.25); border-radius:14px; overflow:hidden; }
+  .empire-stat{ flex:1; padding:12px 6px; }
+  .empire-stat:first-child{ border-right:1px solid rgba(255,255,255,0.08); }
+  .e-num{ font-weight:800; font-size:16px; color:#fff; font-family:'Sora'; }
+  .e-label{ font-size:9.5px; color:var(--text-low); margin-top:3px; letter-spacing:0.5px; }
+
+  .hive-levels{ margin-top:14px; display:flex; flex-direction:column; gap:10px; }
+  .hive-cell{
+    position:relative; background:var(--bg-2); border-radius:var(--radius-md);
+    padding:14px 16px; overflow:hidden; border:1px solid rgba(255,255,255,0.05);
+  }
+  .hive-cell::before{
+    content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+  }
+  .hive-cell.l1::before{ background:var(--accent-gold); }
+  .hive-cell.l2::before{ background:var(--accent-cyan); }
+  .hive-cell.l3::before{ background:var(--accent-purple-soft); }
+  .hive-cell-top{ display:flex; justify-content:space-between; align-items:center; }
+  .hive-cell-title{ font-weight:600; font-size:13.5px; }
+  .hive-cell-pct{ font-weight:800; font-size:26px; font-family:'Sora'; }
+  .hive-cell.l1 .hive-cell-pct{ color:var(--accent-gold); }
+  .hive-cell.l2 .hive-cell-pct{ color:var(--accent-cyan); }
+  .hive-cell.l3 .hive-cell-pct{ color:var(--accent-purple-soft); }
+  .hive-cell-sub{ color:var(--text-low); font-size:11.5px; margin-top:4px; }
+  .hive-bar{ height:5px; background:rgba(255,255,255,0.07); border-radius:3px; margin:12px 0 10px; overflow:hidden; }
+  .hive-bar-fill{ height:100%; border-radius:3px; width:0%; transition:width 0.6s ease; }
+  .hive-bar-fill.l1{ background:linear-gradient(90deg, var(--accent-gold), var(--accent-gold-soft)); }
+  .hive-bar-fill.l2{ background:linear-gradient(90deg, var(--accent-cyan), #6be0ff); }
+  .hive-cell-earn{ font-size:12px; color:var(--text-mid); display:flex; justify-content:space-between; }
+  .hive-cell-earn span:first-child{ font-weight:700; color:#fff; }
+
+  /* ---------- Team tree ---------- */
+  .team-tree-card{
+    background:var(--bg-2); border:1px solid rgba(255,255,255,0.06); border-radius:var(--radius-lg);
+    padding:18px 14px;
+  }
+  .team-tree-grid{ display:flex; flex-wrap:wrap; gap:16px 10px; justify-content:center; }
+  .tree-node{ width:66px; text-align:center; }
+  .tree-avatar{
+    width:52px; height:52px; border-radius:50%; margin:0 auto 6px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Sora'; font-weight:800; font-size:19px; color:#1a1220;
+    border:2px solid rgba(255,255,255,0.15);
+  }
+  .tree-node.l1 .tree-avatar{ background:linear-gradient(145deg, var(--accent-gold), var(--accent-gold-soft)); }
+  .tree-node.l2 .tree-avatar{ background:linear-gradient(145deg, #b9c3d4, #e8edf5); }
+  .tree-name{ font-size:10.5px; color:var(--text-mid); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tree-earn{ font-size:10px; color:var(--accent-gold-soft); font-weight:700; margin-top:1px; }
+  .tree-legend{
+    display:flex; align-items:center; justify-content:center; gap:6px; margin-top:16px;
+    font-size:11px; color:var(--text-low); flex-wrap:wrap;
+  }
+  .tl-dot{ width:9px; height:9px; border-radius:50%; margin-left:10px; }
+  .tl-dot:first-child{ margin-left:0; }
+  .tl-dot.l1{ background:var(--accent-gold); }
+  .tl-dot.l2{ background:#b9c3d4; }
+  .tl-dot.you{ background:var(--accent-purple-soft); }
+
+  /* ---------- Withdraw ---------- */
+  .method-grid{ display:flex; gap:10px; margin-bottom:16px; }
+  .method-card{
+    flex:1; background:var(--bg-2); border:2px solid transparent; border-radius:var(--radius-md);
+    padding:16px 10px; text-align:center; cursor:pointer;
+  }
+  .method-card{ transition:border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease; }
+  .method-card.selected{ border-color:var(--accent-purple);  }
+  .method-emoji{ font-size:26px; }
+  .bkash-badge{
+    display:inline-block; background:#E2136E; color:#fff; font-family:'Space Grotesk', sans-serif;
+    font-weight:700; font-size:13px; padding:6px 14px; border-radius:8px; letter-spacing:0.3px;
+  }
+  .method-name{ font-weight:700; margin-top:6px; font-size:14px; }
+  .method-min{ font-size:11px; color:var(--text-low); margin-top:2px; }
+  .input-field{
+    width:100%; background:var(--bg-2); border:1px solid rgba(255,255,255,0.1); border-radius:var(--radius-sm);
+    padding:14px; color:var(--text-hi); font-size:14px; margin-bottom:14px;
+  }
+  .submit-btn{
+    width:100%; padding:15px; border:none; border-radius:var(--radius-sm); font-weight:700; font-size:15px;
+    background:linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); color:#fff; cursor:pointer;
+    box-shadow:0 8px 24px rgba(124,77,255,0.3);
+  }
+  .submit-btn:disabled{ opacity:0.4; }
+  .helper-text{ font-size:12px; color:var(--text-low); text-align:center; margin-top:10px; }
+
+  /* ---------- Toast ---------- */
+  .toast{
+    position:fixed; bottom:100px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--bg-2); border:1px solid rgba(255,255,255,0.1); color:var(--text-hi);
+    padding:12px 20px; border-radius:999px; font-size:13.5px; font-weight:600;
+    opacity:0; transition:all 0.25s ease; z-index:100; box-shadow:0 10px 30px rgba(0,0,0,0.4);
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ---------- Bottom nav ---------- */
+  .navbar{
+    position:fixed; bottom:0; left:0; right:0; z-index:10;
+    background:rgba(13,6,32,0.92); backdrop-filter:blur(14px);
+    border-top:1px solid rgba(255,255,255,0.06);
+    display:flex; padding:10px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+  .nav-item{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+    color:var(--text-low); font-size:10.5px; font-weight:600; cursor:pointer; padding:6px 0;
+    position:relative; transition:color 0.2s ease;
+  }
+  .nav-item .nav-icon{ font-size:19px; display:block; transition:transform 0.15s ease; }
+  .nav-item.active{ color:var(--accent-cyan); }
+  .nav-item.active .nav-icon{ transform:translateY(-2px); filter:drop-shadow(0 0 8px rgba(58,200,255,0.6)); }
+  .nav-item.active::before{
+    content:""; position:absolute; top:-1px; left:50%; transform:translateX(-50%);
+    width:22px; height:2px; border-radius:2px; background:var(--accent-cyan);
+    
+  }
+
+  .page{ display:none; animation:fadeIn 0.25s ease; }
+  .page.active{ display:block; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+</style>
+<!-- Monetag Rewarded Ad SDK — zone পাল্টালে নিচের data-zone ও data-sdk (এবং JS-এর window.show_11346798 কল) দুটোই আপডেট করতে হবে -->
+<script src='//libtl.com/sdk.js' data-zone='11346798' data-sdk='show_11346798'></script>
+</head>
+<body>
+<div class="hex-bg"></div>
+<span class="particle p1"></span><span class="particle p2"></span>
+<span class="particle p3"></span><span class="particle p4"></span>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-hex"></div>
+      <div class="brand-name">Earn<span>Hive</span></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="lang-pill" id="langPill">
+        <button data-lang="bn">বাং</button>
+        <button data-lang="en">EN</button>
+        <button data-lang="ar">عربي</button>
+      </div>
+      <div class="profile-avatar" id="profileAvatar">U</div>
+    </div>
+  </div>
+
+  <!-- ================= HOME PAGE ================= -->
+  <div class="page active" id="page-home">
+    <div class="hero">
+      <div class="hex-balance-wrap">
+        <div class="hex-balance">
+          <div class="hex-balance-inner">
+            <div class="hero-label" data-i="your_balance">YOUR BALANCE</div>
+            <div class="hero-balance"><span>$</span><span id="balanceValue">0.0000</span></div>
+            <div class="hero-sub" id="totalEarnedText">Total earned: $0.0000</div>
+          </div>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-chip"><div class="num" id="statL1">0</div><div class="label" data-i="team_l1">Team L1</div></div>
+        <div class="stat-chip"><div class="num" id="statL2">0</div><div class="label" data-i="team_l2">Team L2</div></div>
+      </div>
+    </div>
+
+    <div class="section-title" data-i="quick_tasks">QUICK TASKS</div>
+    <div id="homeTaskPreview"></div>
+  </div>
+
+  <!-- ================= TASKS PAGE ================= -->
+  <div class="page" id="page-tasks">
+    <h2 class="display" data-i="tasks_title" style="margin-bottom:16px;">Earn Tasks</h2>
+    <div id="taskList"></div>
+  </div>
+
+  <!-- ================= TEAM / REFERRAL PAGE ================= -->
+  <div class="page" id="page-team">
+    <h2 class="display" data-i="team_title" style="margin-bottom:16px;">Your Hive</h2>
+
+    <div class="empire-card">
+      <div class="empire-label" data-i="your_empire">YOUR EMPIRE 🏰</div>
+      <div class="empire-total" id="empireTotal">0</div>
+      <div class="empire-sub" data-i="total_team_2">Total Team (2 levels)</div>
+      <div class="empire-stat-row">
+        <div class="empire-stat"><div class="e-num" id="empireEarned">$0.0000</div><div class="e-label" data-i="earned">EARNED</div></div>
+        <div class="empire-stat"><div class="e-num" id="empireActive">0</div><div class="e-label" data-i="active">ACTIVE</div></div>
+      </div>
+    </div>
+
+    <div class="link-box" id="referralLink">https://t.me/EarnHiveBot?start=ref_...</div>
+    <div class="link-actions">
+      <button class="btn-share" id="btnShare" data-i="share">Share</button>
+      <button class="btn-copy" id="btnCopy" data-i="copy">Copy</button>
+    </div>
+
+    <div class="section-title" data-i="earn_on_levels">EARN ON 2 LEVELS 💰</div>
+    <div class="hive-levels">
+      <div class="hive-cell l1">
+        <div class="hive-cell-top">
+          <div class="hive-cell-pct" id="pctL1">10%</div>
+          <div style="text-align:right;">
+            <div class="hive-cell-title" data-i="level1">Level 1 · Direct</div>
+            <div class="hive-cell-sub"><span id="cellL1">0</span> <span data-i="members">members</span></div>
+          </div>
+        </div>
+        <div class="hive-bar"><div class="hive-bar-fill l1" id="barL1"></div></div>
+        <div class="hive-cell-earn"><span id="earnL1">$0.0000</span> <span data-i="earnings_tier">Earnings from this tier</span></div>
+      </div>
+      <div class="hive-cell l2">
+        <div class="hive-cell-top">
+          <div class="hive-cell-pct" id="pctL2">5%</div>
+          <div style="text-align:right;">
+            <div class="hive-cell-title" data-i="level2">Level 2 · Indirect</div>
+            <div class="hive-cell-sub"><span id="cellL2">0</span> <span data-i="members">members</span></div>
+          </div>
+        </div>
+        <div class="hive-bar"><div class="hive-bar-fill l2" id="barL2"></div></div>
+        <div class="hive-cell-earn"><span id="earnL2">$0.0000</span> <span data-i="earnings_tier">Earnings from this tier</span></div>
+      </div>
+    </div>
+    <p class="helper-text" data-i="referral_note">You earn commission only when your referrals complete real tasks — not just for joining.</p>
+
+    <div class="section-title" id="teamTreeTitle" data-i="team_tree">0 YOUR TEAM TREE 🌳</div>
+    <div class="team-tree-card">
+      <div id="teamTree" class="team-tree-grid"></div>
+      <p class="helper-text" id="noReferralsText" data-i="no_referrals_yet" style="display:none;">No referrals yet — share your link to start earning.</p>
+      <div class="tree-legend">
+        <span class="tl-dot l1"></span><span data-i="level1_short">L1</span>
+        <span class="tl-dot l2"></span><span data-i="level2_short">L2</span>
+        <span class="tl-dot you"></span><span data-i="you">You</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= WALLET / WITHDRAW PAGE ================= -->
+  <div class="page" id="page-wallet">
+    <h2 class="display" data-i="wallet_title" style="margin-bottom:16px;">Withdraw</h2>
+    <div class="method-grid">
+      <div class="method-card selected" id="methodBkash" data-method="bkash">
+        <div class="bkash-badge">bKash</div>
+        <div class="method-name">bKash</div>
+        <div class="method-min">min $1</div>
+      </div>
+      <div class="method-card" id="methodUsdt" data-method="usdt">
+        <div class="method-emoji">💵</div>
+        <div class="method-name">USDT</div>
+        <div class="method-min">BEP20 · min $5</div>
+      </div>
+    </div>
+    <input type="text" class="input-field" id="accountInput" placeholder="bKash number">
+    <button class="submit-btn" id="submitWithdraw" data-i="request_withdraw">Request Withdrawal</button>
+    <p class="helper-text" data-i="processing_note">Payments are processed within 12–24 hours.</p>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="navbar">
+  <div class="nav-item active" data-page="home"><div class="nav-icon">🏠</div><span data-i="nav_home">Home</span></div>
+  <div class="nav-item" data-page="tasks"><div class="nav-icon">📋</div><span data-i="nav_tasks">Tasks</span></div>
+  <div class="nav-item" data-page="team"><div class="nav-icon">🐝</div><span data-i="nav_team">Hive</span></div>
+  <div class="nav-item" data-page="wallet"><div class="nav-icon">💸</div><span data-i="nav_wallet">Wallet</span></div>
+</div>
+
+<script>
+/* ======================================================
+   CONFIG — এখানে আপনার Flask backend-এর URL বসান
+   ====================================================== */
+const API_BASE = "https://kawsar000111.pythonanywhere.com";
+
+/* ======================================================
+   i18n
+   ====================================================== */
+const I18N = {
+  en: {
+    your_balance:"YOUR BALANCE", team_l1:"Team L1", team_l2:"Team L2", team_l3:"Team L3",
+    quick_tasks:"QUICK TASKS", tasks_title:"Earn Tasks", team_title:"Your Hive",
+    share:"Share", copy:"Copy", level1:"Level 1 · Direct", level2:"Level 2 · Indirect",
+    level3:"Level 3 · Extended", members:"members",
+    referral_note:"You earn commission only when your referrals complete real tasks — not just for joining.",
+    team_members:"Team Members", no_referrals_yet:"No referrals yet — share your link to start earning.",
+    earned_from:"earned from this member",
+    your_empire:"YOUR EMPIRE 🏰", total_team_2:"Total Team (2 levels)", earned:"EARNED", active:"ACTIVE",
+    earn_on_levels:"EARN ON 2 LEVELS 💰", earnings_tier:"Earnings from this tier",
+    team_tree:"YOUR TEAM TREE 🌳", level1_short:"L1", level2_short:"L2", you:"You",
+    wallet_title:"Withdraw", request_withdraw:"Request Withdrawal",
+    processing_note:"Payments are processed within 12–24 hours.",
+    nav_home:"Home", nav_tasks:"Tasks", nav_team:"Hive", nav_wallet:"Wallet",
+    task_join:"Join Channel", task_ad:"Watch Ad",
+    claim:"Claim", done:"Done", verify:"Verify",
+    copied:"Link copied!", already_done:"Already completed today", not_joined:"You haven't joined yet",
+    reward_earned:"You earned", insufficient:"Balance below minimum withdrawal", withdraw_success:"Withdrawal requested!",
+    today_label:"today", ad_not_ready:"Ad not ready yet, try again in a moment", ad_skipped:"Ad closed early — no reward",
+    daily_limit_reached:"Daily ad limit reached — come back tomorrow",
+  },
+  bn: {
+    your_balance:"আপনার ব্যালেন্স", team_l1:"টিম L1", team_l2:"টিম L2", team_l3:"টিম L3",
+    quick_tasks:"দ্রুত টাস্ক", tasks_title:"আয়ের টাস্ক", team_title:"আপনার হাইভ",
+    share:"শেয়ার", copy:"কপি", level1:"লেভেল ১ · ডাইরেক্ট", level2:"লেভেল ২ · ইনডাইরেক্ট",
+    level3:"লেভেল ৩ · এক্সটেন্ডেড", members:"জন",
+    referral_note:"রেফার করা মানুষ আসল টাস্ক সম্পন্ন করলেই আপনি কমিশন পাবেন — শুধু জয়েন করলে না।",
+    team_members:"টিম মেম্বার", no_referrals_yet:"এখনো কেউ রেফার হয়নি — লিংক শেয়ার করে আয় শুরু করুন।",
+    earned_from:"এই মেম্বার থেকে আয়",
+    your_empire:"আপনার সাম্রাজ্য 🏰", total_team_2:"মোট টিম (২ লেভেল)", earned:"আয়", active:"সক্রিয়",
+    earn_on_levels:"২ লেভেলে আয় করুন 💰", earnings_tier:"এই টিয়ার থেকে আয়",
+    team_tree:"আপনার টিম ট্রি 🌳", level1_short:"লেভেল ১", level2_short:"লেভেল ২", you:"আপনি",
+    wallet_title:"উইথড্র", request_withdraw:"উইথড্র রিকোয়েস্ট করুন",
+    processing_note:"১২-২৪ ঘন্টার মধ্যে পেমেন্ট করা হবে।",
+    nav_home:"হোম", nav_tasks:"টাস্ক", nav_team:"হাইভ", nav_wallet:"ওয়ালেট",
+    task_join:"চ্যানেল জয়েন করুন", task_ad:"অ্যাড দেখুন",
+    claim:"নিন", done:"সম্পন্ন", verify:"চেক করুন",
+    copied:"লিংক কপি হয়েছে!", already_done:"আজকে ইতিমধ্যে সম্পন্ন হয়েছে", not_joined:"আপনি এখনো জয়েন করেননি",
+    reward_earned:"আপনি পেয়েছেন", insufficient:"ব্যালেন্স মিনিমাম উইথড্রর চেয়ে কম", withdraw_success:"উইথড্র রিকোয়েস্ট করা হয়েছে!",
+    today_label:"আজ", ad_not_ready:"অ্যাড এখনো রেডি হয়নি, একটু পর আবার চেষ্টা করুন", ad_skipped:"অ্যাড আগেই বন্ধ করেছেন — রিওয়ার্ড পাবেন না",
+    daily_limit_reached:"আজকের অ্যাড লিমিট শেষ — কাল আবার আসুন",
+  },
+  ar: {
+    your_balance:"رصيدك", team_l1:"الفريق ١", team_l2:"الفريق ٢", team_l3:"الفريق ٣",
+    quick_tasks:"مهام سريعة", tasks_title:"مهام الربح", team_title:"خليتك",
+    share:"مشاركة", copy:"نسخ", level1:"المستوى ١ · مباشر", level2:"المستوى ٢ · غير مباشر",
+    level3:"المستوى ٣ · ممتد", members:"أعضاء",
+    referral_note:"تربح عمولة فقط عندما يكمل من دعوتهم مهام حقيقية — وليس فقط عند الانضمام.",
+    team_members:"أعضاء الفريق", no_referrals_yet:"لا يوجد إحالات بعد — شارك رابطك لبدء الربح.",
+    earned_from:"الأرباح من هذا العضو",
+    your_empire:"إمبراطوريتك 🏰", total_team_2:"إجمالي الفريق (مستويين)", earned:"الأرباح", active:"نشط",
+    earn_on_levels:"اربح على مستويين 💰", earnings_tier:"الأرباح من هذا المستوى",
+    team_tree:"شجرة فريقك 🌳", level1_short:"م1", level2_short:"م2", you:"أنت",
+    wallet_title:"سحب", request_withdraw:"طلب السحب",
+    processing_note:"تتم معالجة الدفعات خلال ١٢-٢٤ ساعة.",
+    nav_home:"الرئيسية", nav_tasks:"المهام", nav_team:"الخلية", nav_wallet:"المحفظة",
+    task_join:"انضم للقناة", task_ad:"مشاهدة إعلان",
+    claim:"احصل", done:"تم", verify:"تحقق",
+    copied:"تم نسخ الرابط!", already_done:"تم الإنجاز اليوم بالفعل", not_joined:"لم تنضم بعد",
+    reward_earned:"لقد ربحت", insufficient:"الرصيد أقل من الحد الأدنى للسحب", withdraw_success:"تم طلب السحب!",
+    today_label:"اليوم", ad_not_ready:"الإعلان غير جاهز بعد، حاول مرة أخرى بعد قليل", ad_skipped:"تم إغلاق الإعلان مبكرًا — لا مكافأة",
+    daily_limit_reached:"تم الوصول للحد اليومي — عد غدًا",
+  }
+};
+let currentLang = "en";
+let state = { balance:0, total_earned:0, referrals:{level1:0,level2:0}, referralBreakdown:[], adViewsToday:0, cfg:{}, taskStatus:{} };
+let selectedMethod = "bkash";
+
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); }
+
+function setProfileAvatar(){
+  const el = document.getElementById("profileAvatar");
+  if(!el) return;
+  const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+  const photoUrl = tgUser && tgUser.photo_url;
+  const name = (tgUser && (tgUser.first_name || tgUser.username)) || "U";
+  if(photoUrl){
+    el.style.backgroundImage = `url('${photoUrl}')`;
+    el.textContent = "";
+  } else {
+    el.style.backgroundImage = "";
+    el.textContent = name.trim().charAt(0).toUpperCase();
+  }
+}
+setProfileAvatar();
+
+function tr(key){ return (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key; }
+
+function applyTranslations(){
+  document.querySelectorAll("[data-i]").forEach(el=>{
+    el.textContent = tr(el.getAttribute("data-i"));
+  });
+  document.getElementById("accountInput").placeholder =
+    selectedMethod === "bkash" ? "bKash number" : "USDT (BEP20) wallet address";
+  document.body.dir = currentLang === "ar" ? "rtl" : "ltr";
+  renderTasks();
+  renderReferralBreakdown();
+}
+
+function initials(name){
+  if(!name) return "U";
+  return name.trim().charAt(0).toUpperCase();
+}
+
+function renderReferralBreakdown(){
+  const list = state.referralBreakdown || [];
+  const container = document.getElementById("teamTree");
+  const emptyText = document.getElementById("noReferralsText");
+  if(!container) return;
+
+  // Empire stats
+  const totalTeam = (state.referrals.level1 || 0) + (state.referrals.level2 || 0);
+  const totalEarnedFromTeam = list.reduce((sum,m)=> sum + m.total_earned, 0);
+  const activeMembers = list.length;
+  const elEmpireTotal = document.getElementById("empireTotal");
+  const elEmpireEarned = document.getElementById("empireEarned");
+  const elEmpireActive = document.getElementById("empireActive");
+  const elTreeTitle = document.getElementById("teamTreeTitle");
+  if(elEmpireTotal) elEmpireTotal.textContent = totalTeam;
+  if(elEmpireEarned) elEmpireEarned.textContent = "$" + totalEarnedFromTeam.toFixed(4);
+  if(elEmpireActive) elEmpireActive.textContent = activeMembers;
+  if(elTreeTitle) elTreeTitle.textContent = totalTeam + " " + tr("team_tree");
+
+  // Per-tier earnings for the level cards
+  const earnL1 = list.filter(m=>m.level===1).reduce((s,m)=>s+m.total_earned,0);
+  const earnL2 = list.filter(m=>m.level===2).reduce((s,m)=>s+m.total_earned,0);
+  const maxEarn = Math.max(earnL1, earnL2, 0.0001);
+  const elEarnL1 = document.getElementById("earnL1");
+  const elEarnL2 = document.getElementById("earnL2");
+  const elBarL1 = document.getElementById("barL1");
+  const elBarL2 = document.getElementById("barL2");
+  if(elEarnL1) elEarnL1.textContent = "$" + earnL1.toFixed(4);
+  if(elEarnL2) elEarnL2.textContent = "$" + earnL2.toFixed(4);
+  if(elBarL1) elBarL1.style.width = Math.max(4, (earnL1/maxEarn)*100) + "%";
+  if(elBarL2) elBarL2.style.width = Math.max(4, (earnL2/maxEarn)*100) + "%";
+
+  if(list.length === 0){
+    container.innerHTML = "";
+    if(emptyText) emptyText.style.display = "block";
+    return;
+  }
+  if(emptyText) emptyText.style.display = "none";
+
+  const sorted = [...list].sort((a,b)=> a.level - b.level);
+  container.innerHTML = sorted.map(m=>{
+    const levelClass = m.level === 1 ? "l1" : "l2";
+    return `
+      <div class="tree-node ${levelClass}">
+        <div class="tree-avatar">${initials(m.username)}</div>
+        <div class="tree-name">${m.username}</div>
+        <div class="tree-earn">+$${m.total_earned.toFixed(4)}</div>
+      </div>`;
+  }).join("");
+}
+
+document.getElementById("langPill").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button");
+  if(!btn) return;
+  currentLang = btn.dataset.lang;
+  document.querySelectorAll("#langPill button").forEach(b=>b.classList.toggle("active", b===btn));
+  applyTranslations();
+  apiPost("/api/language", {language: currentLang});
+});
+
+function showToast(msg){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(()=> el.classList.remove("show"), 2200);
+}
+
+/* ======================================================
+   API HELPERS
+   ====================================================== */
+function initData(){ return tg ? tg.initData : ""; }
+
+async function apiPost(path, body){
+  const res = await fetch(API_BASE + path, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "X-Telegram-Init-Data": initData() },
+    body: JSON.stringify(body || {})
+  });
+  return res.json();
+}
+async function apiGet(path){
+  const res = await fetch(API_BASE + path, {
+    headers:{ "X-Telegram-Init-Data": initData() }
+  });
+  return res.json();
+}
+
+/* ======================================================
+   BOOTSTRAP
+   ====================================================== */
+async function bootstrap(){
+  try{
+    const data = await apiPost("/api/auth", {});
+    if (data.error) { showToast("Auth failed"); return; }
+    state.balance = data.balance;
+    state.total_earned = data.total_earned;
+    state.referrals = data.referrals;
+    state.cfg = data.config;
+    currentLang = data.language || "en";
+    document.querySelectorAll("#langPill button").forEach(b=>b.classList.toggle("active", b.dataset.lang===currentLang));
+
+    const statusData = await apiGet("/api/task/status");
+    state.taskStatus = statusData;
+    state.adViewsToday = statusData.ad_views_today || 0;
+
+    const refData = await apiGet("/api/referral");
+    document.getElementById("referralLink").textContent = refData.link;
+    state.referralLink = refData.link;
+    state.referralBreakdown = refData.breakdown || [];
+    renderReferralBreakdown();
+
+    renderAll();
+  } catch(e){
+    showToast("Connection error");
+  }
+}
+
+function renderAll(){
+  document.getElementById("balanceValue").textContent = state.balance.toFixed(4);
+  document.getElementById("totalEarnedText").textContent =
+    (currentLang==="bn" ? "মোট আয়: $" : currentLang==="ar" ? "إجمالي الأرباح: $" : "Total earned: $") + state.total_earned.toFixed(4);
+  document.getElementById("statL1").textContent = state.referrals.level1;
+  document.getElementById("statL2").textContent = state.referrals.level2;
+  document.getElementById("cellL1").textContent = state.referrals.level1;
+  document.getElementById("cellL2").textContent = state.referrals.level2;
+  if(state.cfg.referral_rates){
+    document.getElementById("pctL1").textContent = state.cfg.referral_rates[0] + "%";
+    document.getElementById("pctL2").textContent = state.cfg.referral_rates[1] + "%";
+  }
+  applyTranslations();
+}
+
+/* ======================================================
+   TASKS RENDERING
+   ====================================================== */
+function taskCardHTML(id, icon, iconClass, titleKey, reward, done, subtitle){
+  return `
+    <div class="task-card ${id}-card">
+      <div class="task-icon ${iconClass}">${icon}</div>
+      <div class="task-info">
+        <div class="task-title">${tr(titleKey)}</div>
+        <div class="task-reward">+$${reward.toFixed(4)}${subtitle ? " · " + subtitle : ""}</div>
+      </div>
+      <button class="task-btn ${done?'done':''}" id="btn-${id}" ${done?'disabled':''}>${done?tr('done'):tr('claim')}</button>
+    </div>`;
+}
+
+function renderTasks(){
+  const cfg = state.cfg;
+  const viewsToday = state.adViewsToday || 0;
+  const viewsLimit = cfg.ad_views_limit || 10;
+  const maxed = viewsToday >= viewsLimit;
+  const subtitle = `${viewsToday}/${viewsLimit} ${tr("today_label")}`;
+
+  const html = taskCardHTML("ad","📺","ad","task_ad", cfg.reward_ad_view, maxed, subtitle);
+
+  document.getElementById("taskList").innerHTML = html;
+  document.getElementById("homeTaskPreview").innerHTML = html;
+
+  ["ad"].forEach(id=>{
+    document.querySelectorAll(`#btn-${id}`).forEach(btn=>{
+      btn.addEventListener("click", ()=>handleTaskClick(id));
+    });
+  });
+}
+
+async function handleTaskClick(taskId){
+  if(taskId === "ad"){
+    if(typeof window.show_11346798 !== "function"){
+      showToast(tr("ad_not_ready"));
+      return;
+    }
+    try{
+      await window.show_11346798(); // Monetag rewarded ad — এটা resolve হয় শুধু ইউজার সম্পূর্ণ অ্যাড দেখলে
+    } catch(e){
+      showToast(tr("ad_skipped"));
+      return; // ইউজার অ্যাড স্কিপ/বন্ধ করলে কোনো রিওয়ার্ড দেওয়া হবে না
+    }
+    const res = await apiPost("/api/task/ad/claim", {});
+    if(res.error === "daily_limit_reached"){ showToast(tr("daily_limit_reached")); renderAll(); return; }
+    if(res.ok){
+      state.balance = res.new_balance;
+      state.adViewsToday = res.views_today;
+      showToast(`${tr("reward_earned")} $${res.reward.toFixed(4)}`);
+      renderAll();
+    }
+  }
+}
+
+/* ======================================================
+   REFERRAL SHARE / COPY
+   ====================================================== */
+document.getElementById("btnCopy").addEventListener("click", ()=>{
+  navigator.clipboard.writeText(state.referralLink || "");
+  showToast(tr("copied"));
+});
+document.getElementById("btnShare").addEventListener("click", ()=>{
+  if(tg) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(state.referralLink||"")}`);
+});
+
+/* ======================================================
+   WITHDRAW
+   ====================================================== */
+document.getElementById("methodBkash").addEventListener("click", ()=>selectMethod("bkash"));
+document.getElementById("methodUsdt").addEventListener("click", ()=>selectMethod("usdt"));
+
+function selectMethod(method){
+  selectedMethod = method;
+  document.getElementById("methodBkash").classList.toggle("selected", method==="bkash");
+  document.getElementById("methodUsdt").classList.toggle("selected", method==="usdt");
+  document.getElementById("accountInput").placeholder =
+    method === "bkash" ? "bKash number" : "USDT (BEP20) wallet address";
+}
+
+document.getElementById("submitWithdraw").addEventListener("click", async ()=>{
+  const accountInfo = document.getElementById("accountInput").value.trim();
+  if(!accountInfo) return;
+  const res = await apiPost("/api/withdraw", {method:selectedMethod, account_info:accountInfo});
+  if(res.error === "insufficient_balance"){ showToast(tr("insufficient")); return; }
+  if(res.ok){
+    state.balance = 0;
+    showToast(tr("withdraw_success"));
+    document.getElementById("accountInput").value = "";
+    renderAll();
+  }
+});
+
+/* ======================================================
+   NAVIGATION
+   ====================================================== */
+document.querySelectorAll(".nav-item").forEach(item=>{
+  item.addEventListener("click", ()=>{
+    document.querySelectorAll(".nav-item").forEach(i=>i.classList.remove("active"));
+    document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+    item.classList.add("active");
+    document.getElementById("page-"+item.dataset.page).classList.add("active");
+  });
+});
+
+bootstrap();
+</script>
+</body>
+</html>

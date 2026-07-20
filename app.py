@@ -101,6 +101,8 @@ def auth():
             "min_withdraw_usdt": config.MIN_WITHDRAW_USDT,
             "reward_channel_join": config.REWARD_CHANNEL_JOIN,
             "reward_ad_view": config.REWARD_AD_VIEW,
+            "ad_views_limit": config.MAX_AD_VIEWS_PER_DAY,
+            "monetag_zone_id": config.MONETAG_ZONE_ID,
             "required_channel": config.REQUIRED_CHANNEL,
         }
     })
@@ -130,6 +132,7 @@ def distribute_referral_commission(user_id, reward_amount):
         commission = reward_amount * (percents[level] / 100)
         if commission > 0:
             db.add_balance(referrer_id, commission)
+            db.log_referral_earning(referrer_id, user_id, level + 1, commission)
             try:
                 requests.post(f"{TELEGRAM_API}/sendMessage", json={
                     "chat_id": referrer_id,
@@ -141,43 +144,22 @@ def distribute_referral_commission(user_id, reward_amount):
 
 @app.route("/api/task/channel/verify", methods=["POST"])
 def verify_channel_task():
-    auth_user = get_authed_user()
-    if not auth_user:
-        return jsonify({"error": "invalid_init_data"}), 401
-    user_id = auth_user["user_id"]
-
-    if db.has_completed_task_today(user_id, "channel_join"):
-        return jsonify({"error": "already_completed"}), 400
-
-    try:
-        resp = requests.get(f"{TELEGRAM_API}/getChatMember", params={
-            "chat_id": config.REQUIRED_CHANNEL, "user_id": user_id
-        }, timeout=5).json()
-        status = resp.get("result", {}).get("status")
-        if status not in ("member", "administrator", "creator"):
-            return jsonify({"error": "not_joined"}), 400
-    except Exception:
-        return jsonify({"error": "verification_failed"}), 500
-
-    reward = config.REWARD_CHANNEL_JOIN
-    db.add_balance(user_id, reward)
-    db.log_task_completion(user_id, "channel_join", reward)
-    distribute_referral_commission(user_id, reward)
-
-    user = db.get_user(user_id)
-    return jsonify({"ok": True, "reward": reward, "new_balance": user["balance"]})
+    # চ্যানেল জয়েন এখন /start-এই বাধ্যতামূলক (বিনামূল্যে) - তাই এখানে আর কোনো রিওয়ার্ড দেওয়া হয় না,
+    # যাতে প্রতিদিন ফাঁকা রিওয়ার্ড ক্লেইম করা না যায়।
+    return jsonify({"error": "task_disabled", "message": "Channel join is now free and required at bot start."}), 400
 
 
 @app.route("/api/task/ad/claim", methods=["POST"])
 def claim_ad_task():
-    """NOTE: CPAlead/AdsGram/Monetag SDK-এর "reward" ইভেন্ট থেকে এটা কল হবে।"""
+    """Monetag SDK-এর rewarded ad সম্পন্ন হওয়ার পর এই এন্ডপয়েন্ট কল হয়। দিনে MAX_AD_VIEWS_PER_DAY বার পর্যন্ত রিওয়ার্ড দেওয়া হয়।"""
     auth_user = get_authed_user()
     if not auth_user:
         return jsonify({"error": "invalid_init_data"}), 401
     user_id = auth_user["user_id"]
 
-    if db.has_completed_task_today(user_id, "ad_view"):
-        return jsonify({"error": "already_completed"}), 400
+    count_today = db.get_task_completion_count_today(user_id, "ad_view")
+    if count_today >= config.MAX_AD_VIEWS_PER_DAY:
+        return jsonify({"error": "daily_limit_reached"}), 400
 
     reward = config.REWARD_AD_VIEW
     db.add_balance(user_id, reward)
@@ -185,7 +167,11 @@ def claim_ad_task():
     distribute_referral_commission(user_id, reward)
 
     user = db.get_user(user_id)
-    return jsonify({"ok": True, "reward": reward, "new_balance": user["balance"]})
+    new_count = count_today + 1
+    return jsonify({
+        "ok": True, "reward": reward, "new_balance": user["balance"],
+        "views_today": new_count, "views_limit": config.MAX_AD_VIEWS_PER_DAY
+    })
 
 
 @app.route("/api/task/status", methods=["GET"])
@@ -195,9 +181,11 @@ def task_status():
         return jsonify({"error": "invalid_init_data"}), 401
     user_id = auth_user["user_id"]
 
+    ad_views_today = db.get_task_completion_count_today(user_id, "ad_view")
     return jsonify({
-        "channel_join": db.has_completed_task_today(user_id, "channel_join"),
-        "ad_view": db.has_completed_task_today(user_id, "ad_view"),
+        "ad_views_today": ad_views_today,
+        "ad_views_limit": config.MAX_AD_VIEWS_PER_DAY,
+        "ad_view_maxed": ad_views_today >= config.MAX_AD_VIEWS_PER_DAY,
     })
 
 
@@ -212,11 +200,13 @@ def referral_info():
     bot_username = bot_info.get("result", {}).get("username", "")
     link = f"https://t.me/{bot_username}?start=ref_{user_id}"
     l1, l2 = db.get_referral_counts(user_id)
+    breakdown = db.get_referral_breakdown(user_id)
 
     return jsonify({
         "link": link,
         "level1": l1, "level2": l2,
         "rates": [config.REFERRAL_LEVEL_1, config.REFERRAL_LEVEL_2],
+        "breakdown": breakdown,
     })
 
 
@@ -270,22 +260,58 @@ def tg_send_message(chat_id, text, reply_markup=None):
         pass
 
 
-def handle_start_command(message):
-    chat_id = message["chat"]["id"]
-    text = message.get("text", "")
-    parts = text.split(maxsplit=1)
-    start_param = parts[1] if len(parts) > 1 else ""
+def is_channel_member(user_id):
+    try:
+        resp = requests.get(f"{TELEGRAM_API}/getChatMember", params={
+            "chat_id": config.REQUIRED_CHANNEL, "user_id": user_id
+        }, timeout=5).json()
+        status = resp.get("result", {}).get("status")
+        return status in ("member", "administrator", "creator")
+    except Exception:
+        return False
 
+
+def send_open_app_message(chat_id, start_param=""):
     web_app_url = config.MINI_APP_URL
     if start_param:
         web_app_url = f"{config.MINI_APP_URL}?start_param={start_param}"
-
     reply_markup = {
         "inline_keyboard": [[
             {"text": "🚀 Open EarnHive", "web_app": {"url": web_app_url}}
         ]]
     }
     tg_send_message(chat_id, "🎉 EarnHive-এ স্বাগতম!\n\nনিচের বাটনে ক্লিক করে অ্যাপ খুলুন এবং আয় শুরু করুন।", reply_markup)
+
+
+def send_join_channel_message(chat_id, user_id, start_param=""):
+    channel_username = config.REQUIRED_CHANNEL.lstrip("@")
+    reply_markup = {
+        "inline_keyboard": [
+            [{"text": "📢 চ্যানেলে জয়েন করুন", "url": f"https://t.me/{channel_username}"}],
+            [{"text": "✅ জয়েন করেছি - ভেরিফাই করুন", "callback_data": f"checkjoin_{start_param}"}]
+        ]
+    }
+    tg_send_message(
+        chat_id,
+        "🎉 EarnHive-এ স্বাগতম!\n\n"
+        "অ্যাপ ব্যবহার শুরু করার আগে আমাদের অফিসিয়াল চ্যানেলে জয়েন করতে হবে।\n\n"
+        "1️⃣ নিচে চ্যানেলে জয়েন করুন\n"
+        "2️⃣ তারপর \"জয়েন করেছি\" বাটনে ক্লিক করুন",
+        reply_markup
+    )
+
+
+def handle_start_command(message):
+    chat_id = message["chat"]["id"]
+    user_id = message["from"]["id"]
+    text = message.get("text", "")
+    parts = text.split(maxsplit=1)
+    start_param = parts[1] if len(parts) > 1 else ""
+
+    if is_channel_member(user_id):
+        send_open_app_message(chat_id, start_param)
+    else:
+        send_join_channel_message(chat_id, user_id, start_param)
 
 
 def handle_pending_command(message):
@@ -319,6 +345,28 @@ def handle_callback_query(callback_query):
     callback_id = callback_query["id"]
     message_id = callback_query["message"]["message_id"]
     chat_id = callback_query["message"]["chat"]["id"]
+
+    if data.startswith("checkjoin_"):
+        start_param = data.replace("checkjoin_", "", 1)
+        if is_channel_member(from_user_id):
+            try:
+                requests.post(f"{TELEGRAM_API}/answerCallbackQuery", json={"callback_query_id": callback_id}, timeout=5)
+                requests.post(f"{TELEGRAM_API}/deleteMessage", json={
+                    "chat_id": chat_id, "message_id": message_id
+                }, timeout=5)
+            except Exception:
+                pass
+            send_open_app_message(chat_id, start_param)
+        else:
+            try:
+                requests.post(f"{TELEGRAM_API}/answerCallbackQuery", json={
+                    "callback_query_id": callback_id,
+                    "text": "❌ এখনো চ্যানেলে জয়েন করেননি! আগে জয়েন করুন।",
+                    "show_alert": True
+                }, timeout=5)
+            except Exception:
+                pass
+        return
 
     try:
         requests.post(f"{TELEGRAM_API}/answerCallbackQuery", json={"callback_query_id": callback_id}, timeout=5)

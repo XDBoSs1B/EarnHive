@@ -23,7 +23,9 @@ REFERRAL_LEVEL_2 = 5    # Indirect
 
 # --- টাস্ক রিওয়ার্ড (উদাহরণ, ইচ্ছেমতো বদলান) ---
 REWARD_CHANNEL_JOIN = 0.01     # চ্যানেল জয়েন করলে $
-REWARD_AD_VIEW = 0.003         # অ্যাড দেখলে $ (পরে CPAlead ইত্যাদি বসানোর পর কার্যকর হবে)
+REWARD_AD_VIEW = 0.0002        # প্রতিটা অ্যাড দেখলে $ (Monetag)
+MAX_AD_VIEWS_PER_DAY = 10      # একজন ইউজার দিনে সর্বোচ্চ এতগুলো অ্যাড দেখে রিওয়ার্ড পাবে
+MONETAG_ZONE_ID = "11346798"   # Monetag zone ID (EarnHive-এর নিজস্ব)
 
 # --- উইথড্র মিনিমাম (সবসময় $ এ) ---
 MIN_WITHDRAW_BKASH = 1.00

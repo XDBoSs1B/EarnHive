@@ -53,6 +53,17 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS referral_earnings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER,     -- who receives the commission
+            source_user_id INTEGER,  -- the referred person who triggered it
+            level INTEGER,           -- 1 or 2
+            amount REAL,
+            created_at TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -131,6 +142,40 @@ def get_referral_chain(user_id):
     return chain  # [level1_referrer, level2_referrer]
 
 
+def log_referral_earning(referrer_id, source_user_id, level, amount):
+    """প্রতিবার কমিশন দেওয়ার সময় কে থেকে কত এসেছে তা রেকর্ড রাখে"""
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO referral_earnings (referrer_id, source_user_id, level, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+        (referrer_id, source_user_id, level, amount, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_referral_breakdown(user_id):
+    """প্রতিটা রেফার করা মানুষ থেকে এখন পর্যন্ত মোট কত টাকা এসেছে তার লিস্ট"""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT re.source_user_id, u.username, re.level, SUM(re.amount) as total
+        FROM referral_earnings re
+        LEFT JOIN users u ON u.user_id = re.source_user_id
+        WHERE re.referrer_id = ?
+        GROUP BY re.source_user_id, re.level
+        ORDER BY total DESC
+    """, (user_id,)).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        result.append({
+            "user_id": r["source_user_id"],
+            "username": r["username"] or f"User {r['source_user_id']}",
+            "level": r["level"],
+            "total_earned": round(r["total"], 4)
+        })
+    return result
+
+
 # ---------- TASK FUNCTIONS ----------
 
 def log_task_completion(user_id, task_type, reward):
@@ -144,12 +189,27 @@ def log_task_completion(user_id, task_type, reward):
 
 
 def has_completed_task_today(user_id, task_type):
-    """একই টাস্ক বারবার করে আয় করা ঠেকাতে (যেমন দিনে একবার চ্যানেল-জয়েন রিওয়ার্ড)"""
+    """একই টাস্ক বারবার করে আয় করা ঠেকাতে (যেমন দিনে একবার - শুধু বিজ্ঞাপন-ধরনের রিপিটেবল টাস্কের জন্য, যেমন Watch Ad)"""
     conn = get_conn()
     today = datetime.utcnow().date().isoformat()
     row = conn.execute(
         "SELECT * FROM task_completions WHERE user_id=? AND task_type=? AND completed_at LIKE ?",
         (user_id, task_type, f"{today}%")
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def has_completed_task_ever(user_id, task_type):
+    """এককালীন টাস্কের জন্য (সার্ভে, অফার, অ্যাপ ইনস্টল, ওয়েবসাইট ভিজিট ইত্যাদি)।
+    এই টাস্কগুলো একবার সম্পন্ন হলে জীবনে আর কখনো রিওয়ার্ড দেওয়া উচিত না,
+    কারণ অ্যাডভার্টাইজার শুধু প্রথমবারের জন্যই টাকা দেয় - বারবার দিলে সেটা লস।
+    ভবিষ্যতে CPAlead/AdsGram-এর মতো নতুন অফার-টাস্ক যোগ করার সময় এই ফাংশনটা ব্যবহার করুন,
+    has_completed_task_today() এর বদলে।"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM task_completions WHERE user_id=? AND task_type=?",
+        (user_id, task_type)
     ).fetchone()
     conn.close()
     return row is not None
