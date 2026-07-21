@@ -14,8 +14,8 @@ ADMIN_IDS = [6669633686]
 REQUIRED_CHANNEL = "@Earn_Hive67"
 
 # --- Mini App ও Backend-এর লাইভ URL (ডিপ্লয়ের পর বসাতে হবে) ---
-MINI_APP_URL = "https://your-miniapp-url.netlify.app"          # Frontend (Netlify/Vercel)
-MINI_APP_BACKEND_URL = "https://your-backend-url.onrender.com"  # Backend (Render/Railway)
+MINI_APP_URL = "https://fabulous-banoffee-808e08.netlify.app"     # Frontend (Netlify)
+MINI_APP_BACKEND_URL = "https://earnhive.onrender.com"            # Backend (Render) - ডিপ্লয়ের পর সঠিক URL বসাতে হবে
 
 # --- রেফারেল কমিশন রেট (%) ---
 REFERRAL_LEVEL_1 = 10   # Direct
