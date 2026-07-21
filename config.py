@@ -15,7 +15,7 @@ REQUIRED_CHANNEL = "@Earn_Hive67"
 
 # --- Mini App ও Backend-এর লাইভ URL (ডিপ্লয়ের পর বসাতে হবে) ---
 MINI_APP_URL = "https://fabulous-banoffee-808e08.netlify.app"     # Frontend (Netlify)
-MINI_APP_BACKEND_URL = "https://earnhive.onrender.com"            # Backend (Render) - ডিপ্লয়ের পর সঠিক URL বসাতে হবে
+MINI_APP_BACKEND_URL = "https://earnhive-lnlq.onrender.com"       # Backend (Render) - আসল লাইভ URL
 
 # --- রেফারেল কমিশন রেট (%) ---
 REFERRAL_LEVEL_1 = 10   # Direct
