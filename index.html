@@ -79,7 +79,6 @@
     border:1px solid rgba(255,255,255,0.08);
     overflow:hidden;
   }
-  .hex-balance-wrap{ display:none; }
   .hero-label{ color:var(--text-low); font-size:12px; letter-spacing:1.5px; text-transform:uppercase; font-weight:600; position:relative; z-index:1; }
   .hero-balance{
     font-family:'Sora', sans-serif; font-size:42px; font-weight:800; margin:8px 0 2px; letter-spacing:-1px; position:relative; z-index:1;
@@ -325,15 +324,9 @@
   <!-- ================= HOME PAGE ================= -->
   <div class="page active" id="page-home">
     <div class="hero">
-      <div class="hex-balance-wrap">
-        <div class="hex-balance">
-          <div class="hex-balance-inner">
-            <div class="hero-label" data-i="your_balance">YOUR BALANCE</div>
-            <div class="hero-balance"><span>$</span><span id="balanceValue">0.0000</span></div>
-            <div class="hero-sub" id="totalEarnedText">Total earned: $0.0000</div>
-          </div>
-        </div>
-      </div>
+      <div class="hero-label" data-i="your_balance">YOUR BALANCE</div>
+      <div class="hero-balance"><span>$</span><span id="balanceValue">0.0000</span></div>
+      <div class="hero-sub" id="totalEarnedText">Total earned: $0.0000</div>
       <div class="stat-row">
         <div class="stat-chip"><div class="num" id="statL1">0</div><div class="label" data-i="team_l1">Team L1</div></div>
         <div class="stat-chip"><div class="num" id="statL2">0</div><div class="label" data-i="team_l2">Team L2</div></div>
