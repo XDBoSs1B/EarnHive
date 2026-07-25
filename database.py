@@ -1,15 +1,19 @@
 """
 EarnHive Bot - Database Layer
-SQLite ব্যবহার করা হয়েছে, আলাদা সার্ভার লাগবে না।
+এখন PostgreSQL (Supabase) ব্যবহার করা হয়েছে, SQLite না।
+কারণ: Render-এর ফ্রি সার্ভিসের ফাইল সিস্টেম "ephemeral" (অস্থায়ী) -
+প্রতিবার রিডিপ্লয়/রিস্টার্টে লোকাল ফাইল (SQLite) মুছে যায়, ইউজারদের ব্যালেন্স হারিয়ে যেত।
+Supabase একটা আলাদা, স্থায়ী ডাটাবেস সার্ভিস - Render রিডিপ্লয় হলেও এখানকার ডাটা অক্ষত থাকে।
 """
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
-from config import DB_PATH
+from config import DATABASE_URL
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    # sslmode='require' জরুরি - Supabase SSL ছাড়া কানেকশন গ্রহণ করে না
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
     return conn
 
 
@@ -19,12 +23,12 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
+            user_id BIGINT PRIMARY KEY,
             username TEXT,
             language TEXT DEFAULT 'en',
-            balance REAL DEFAULT 0,
-            total_earned REAL DEFAULT 0,
-            referred_by INTEGER,
+            balance DOUBLE PRECISION DEFAULT 0,
+            total_earned DOUBLE PRECISION DEFAULT 0,
+            referred_by BIGINT,
             joined_channel INTEGER DEFAULT 0,
             created_at TEXT
         )
@@ -32,12 +36,12 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS withdrawals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            method TEXT,             -- 'bkash' or 'usdt'
-            amount_usd REAL,
-            account_info TEXT,       -- bkash number or USDT wallet address
-            status TEXT DEFAULT 'pending',  -- pending / approved / rejected
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            method TEXT,
+            amount_usd DOUBLE PRECISION,
+            account_info TEXT,
+            status TEXT DEFAULT 'pending',
             requested_at TEXT,
             processed_at TEXT
         )
@@ -45,26 +49,27 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS task_completions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            task_type TEXT,   -- 'channel_join', 'website_visit', 'ad_view'
-            reward REAL,
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            task_type TEXT,
+            reward DOUBLE PRECISION,
             completed_at TEXT
         )
     """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS referral_earnings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            referrer_id INTEGER,     -- who receives the commission
-            source_user_id INTEGER,  -- the referred person who triggered it
-            level INTEGER,           -- 1 or 2
-            amount REAL,
+            id SERIAL PRIMARY KEY,
+            referrer_id BIGINT,
+            source_user_id BIGINT,
+            level INTEGER,
+            amount DOUBLE PRECISION,
             created_at TEXT
         )
     """)
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -72,56 +77,72 @@ def init_db():
 
 def get_user(user_id):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM users WHERE user_id=%s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row
 
 
 def create_user(user_id, username, referred_by=None):
     conn = get_conn()
-    conn.execute(
-        "INSERT OR IGNORE INTO users (user_id, username, referred_by, created_at) VALUES (?, ?, ?, ?)",
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO users (user_id, username, referred_by, created_at) VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (user_id) DO NOTHING",
         (user_id, username, referred_by, datetime.utcnow().isoformat())
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def set_language(user_id, lang):
     conn = get_conn()
-    conn.execute("UPDATE users SET language=? WHERE user_id=?", (lang, user_id))
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET language=%s WHERE user_id=%s", (lang, user_id))
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def add_balance(user_id, amount):
     conn = get_conn()
-    conn.execute(
-        "UPDATE users SET balance = balance + ?, total_earned = total_earned + ? WHERE user_id=?",
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET balance = balance + %s, total_earned = total_earned + %s WHERE user_id=%s",
         (amount, amount, user_id)
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def deduct_balance(user_id, amount):
     conn = get_conn()
-    conn.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (amount, user_id))
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET balance = balance - %s WHERE user_id=%s", (amount, user_id))
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_referral_counts(user_id):
     """Level 1, 2 রেফার সংখ্যা বের করে"""
     conn = get_conn()
-    level1 = conn.execute("SELECT user_id FROM users WHERE referred_by=?", (user_id,)).fetchall()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT user_id FROM users WHERE referred_by=%s", (user_id,))
+    level1 = cur.fetchall()
     level1_ids = [r["user_id"] for r in level1]
 
     level2_ids = []
     for uid in level1_ids:
-        rows = conn.execute("SELECT user_id FROM users WHERE referred_by=?", (uid,)).fetchall()
+        cur.execute("SELECT user_id FROM users WHERE referred_by=%s", (uid,))
+        rows = cur.fetchall()
         level2_ids.extend([r["user_id"] for r in rows])
 
+    cur.close()
     conn.close()
     return len(level1_ids), len(level2_ids)
 
@@ -129,15 +150,18 @@ def get_referral_counts(user_id):
 def get_referral_chain(user_id):
     """একজন ইউজারের উপরের ২ লেভেল রেফারার বের করে (কমিশন দেওয়ার জন্য)"""
     conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     chain = []
     current = user_id
     for _ in range(2):
-        row = conn.execute("SELECT referred_by FROM users WHERE user_id=?", (current,)).fetchone()
+        cur.execute("SELECT referred_by FROM users WHERE user_id=%s", (current,))
+        row = cur.fetchone()
         if row and row["referred_by"]:
             chain.append(row["referred_by"])
             current = row["referred_by"]
         else:
             break
+    cur.close()
     conn.close()
     return chain  # [level1_referrer, level2_referrer]
 
@@ -145,25 +169,30 @@ def get_referral_chain(user_id):
 def log_referral_earning(referrer_id, source_user_id, level, amount):
     """প্রতিবার কমিশন দেওয়ার সময় কে থেকে কত এসেছে তা রেকর্ড রাখে"""
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO referral_earnings (referrer_id, source_user_id, level, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO referral_earnings (referrer_id, source_user_id, level, amount, created_at) VALUES (%s, %s, %s, %s, %s)",
         (referrer_id, source_user_id, level, amount, datetime.utcnow().isoformat())
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_referral_breakdown(user_id):
     """প্রতিটা রেফার করা মানুষ থেকে এখন পর্যন্ত মোট কত টাকা এসেছে তার লিস্ট"""
     conn = get_conn()
-    rows = conn.execute("""
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
         SELECT re.source_user_id, u.username, re.level, SUM(re.amount) as total
         FROM referral_earnings re
         LEFT JOIN users u ON u.user_id = re.source_user_id
-        WHERE re.referrer_id = ?
-        GROUP BY re.source_user_id, re.level
+        WHERE re.referrer_id = %s
+        GROUP BY re.source_user_id, u.username, re.level
         ORDER BY total DESC
-    """, (user_id,)).fetchall()
+    """, (user_id,))
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     result = []
     for r in rows:
@@ -177,52 +206,62 @@ def get_referral_breakdown(user_id):
 
 
 # ---------- TASK FUNCTIONS ----------
+# (এই ফাংশনগুলো "task_type" স্ট্রিং নেয় বলে tasks_config.py-তে যত ইচ্ছা নতুন
+#  টাস্ক আইডি যোগ করলেও এখানে কিছু বদলাতে হয় না।)
 
 def log_task_completion(user_id, task_type, reward):
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO task_completions (user_id, task_type, reward, completed_at) VALUES (?, ?, ?, ?)",
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO task_completions (user_id, task_type, reward, completed_at) VALUES (%s, %s, %s, %s)",
         (user_id, task_type, reward, datetime.utcnow().isoformat())
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def has_completed_task_today(user_id, task_type):
-    """একই টাস্ক বারবার করে আয় করা ঠেকাতে (যেমন দিনে একবার - শুধু বিজ্ঞাপন-ধরনের রিপিটেবল টাস্কের জন্য, যেমন Watch Ad)"""
-    conn = get_conn()
-    today = datetime.utcnow().date().isoformat()
-    row = conn.execute(
-        "SELECT * FROM task_completions WHERE user_id=? AND task_type=? AND completed_at LIKE ?",
-        (user_id, task_type, f"{today}%")
-    ).fetchone()
-    conn.close()
-    return row is not None
+    """রিপিটেবল দৈনিক টাস্কের জন্য (যেমন Watch Ad) - আজ অন্তত একবার হয়েছে কিনা"""
+    return get_task_completion_count_today(user_id, task_type) > 0
 
 
 def has_completed_task_ever(user_id, task_type):
-    """এককালীন টাস্কের জন্য (সার্ভে, অফার, অ্যাপ ইনস্টল, ওয়েবসাইট ভিজিট ইত্যাদি)।
-    এই টাস্কগুলো একবার সম্পন্ন হলে জীবনে আর কখনো রিওয়ার্ড দেওয়া উচিত না,
-    কারণ অ্যাডভার্টাইজার শুধু প্রথমবারের জন্যই টাকা দেয় - বারবার দিলে সেটা লস।
-    ভবিষ্যতে CPAlead/AdsGram-এর মতো নতুন অফার-টাস্ক যোগ করার সময় এই ফাংশনটা ব্যবহার করুন,
-    has_completed_task_today() এর বদলে।"""
+    """এককালীন টাস্কের জন্য (সার্ভে, অফার, অ্যাপ ইনস্টল ইত্যাদি) - জীবনে একবারও হয়েছে কিনা"""
     conn = get_conn()
-    row = conn.execute(
-        "SELECT * FROM task_completions WHERE user_id=? AND task_type=?",
-        (user_id, task_type)
-    ).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT 1 FROM task_completions WHERE user_id=%s AND task_type=%s LIMIT 1", (user_id, task_type))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row is not None
 
 
 def get_task_completion_count_today(user_id, task_type):
-    """আজকে এই টাস্কটা কতবার সম্পন্ন হয়েছে (কুলডাউন-বেসড টাস্কের জন্য, যেমন ওয়েবসাইট ভিজিট)"""
+    """আজকে এই টাস্কটা কতবার সম্পন্ন হয়েছে (দৈনিক-লিমিট টাস্কের জন্য)"""
     conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     today = datetime.utcnow().date().isoformat()
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM task_completions WHERE user_id=? AND task_type=? AND completed_at LIKE ?",
+    cur.execute(
+        "SELECT COUNT(*) as cnt FROM task_completions WHERE user_id=%s AND task_type=%s AND completed_at LIKE %s",
         (user_id, task_type, f"{today}%")
-    ).fetchone()
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row["cnt"] if row else 0
+
+
+def get_task_completion_count_ever(user_id, task_type):
+    """এই টাস্কটা জীবনে মোট কতবার সম্পন্ন হয়েছে"""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "SELECT COUNT(*) as cnt FROM task_completions WHERE user_id=%s AND task_type=%s",
+        (user_id, task_type)
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row["cnt"] if row else 0
 
@@ -230,10 +269,13 @@ def get_task_completion_count_today(user_id, task_type):
 def get_last_task_completion_time(user_id, task_type):
     """এই টাস্কটা সর্বশেষ কখন সম্পন্ন হয়েছে (কুলডাউন চেক করার জন্য)"""
     conn = get_conn()
-    row = conn.execute(
-        "SELECT completed_at FROM task_completions WHERE user_id=? AND task_type=? ORDER BY completed_at DESC LIMIT 1",
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "SELECT completed_at FROM task_completions WHERE user_id=%s AND task_type=%s ORDER BY completed_at DESC LIMIT 1",
         (user_id, task_type)
-    ).fetchone()
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     if not row:
         return None
@@ -244,33 +286,43 @@ def get_last_task_completion_time(user_id, task_type):
 
 def create_withdrawal(user_id, method, amount_usd, account_info):
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO withdrawals (user_id, method, amount_usd, account_info, requested_at) VALUES (?, ?, ?, ?, ?)",
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO withdrawals (user_id, method, amount_usd, account_info, requested_at) VALUES (%s, %s, %s, %s, %s)",
         (user_id, method, amount_usd, account_info, datetime.utcnow().isoformat())
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_pending_withdrawals():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM withdrawals WHERE status='pending' ORDER BY requested_at ASC").fetchall()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM withdrawals WHERE status='pending' ORDER BY requested_at ASC")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     return rows
 
 
 def update_withdrawal_status(withdrawal_id, status):
     conn = get_conn()
-    conn.execute(
-        "UPDATE withdrawals SET status=?, processed_at=? WHERE id=?",
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE withdrawals SET status=%s, processed_at=%s WHERE id=%s",
         (status, datetime.utcnow().isoformat(), withdrawal_id)
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_withdrawal(withdrawal_id):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM withdrawals WHERE id=?", (withdrawal_id,)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM withdrawals WHERE id=%s", (withdrawal_id,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row

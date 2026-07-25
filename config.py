@@ -21,11 +21,9 @@ MINI_APP_BACKEND_URL = "https://earnhive-lnlq.onrender.com"       # Backend (Ren
 REFERRAL_LEVEL_1 = 10   # Direct
 REFERRAL_LEVEL_2 = 5    # Indirect
 
-# --- টাস্ক রিওয়ার্ড (উদাহরণ, ইচ্ছেমতো বদলান) ---
-REWARD_CHANNEL_JOIN = 0.01     # চ্যানেল জয়েন করলে $
-REWARD_AD_VIEW = 0.0002        # প্রতিটা অ্যাড দেখলে $ (Monetag)
-MAX_AD_VIEWS_PER_DAY = 10      # একজন ইউজার দিনে সর্বোচ্চ এতগুলো অ্যাড দেখে রিওয়ার্ড পাবে
-MONETAG_ZONE_ID = "11346798"   # Monetag zone ID (EarnHive-এর নিজস্ব)
+# --- টাস্কের রিওয়ার্ড/লিমিট এখন এখানে না, তাদের নিজস্ব ফাইলে ---
+# tasks_config.py দেখুন - নতুন টাস্ক (অ্যাড নেটওয়ার্ক, অফার, সার্ভে ইত্যাদি)
+# যোগ/পরিবর্তন করতে শুধু ওই ফাইলটাই এডিট করুন, এখানে কিছু বদলাতে হবে না।
 
 # --- উইথড্র মিনিমাম (সবসময় $ এ) ---
 MIN_WITHDRAW_BKASH = 1.00
@@ -42,8 +40,12 @@ WITHDRAW_PROCESSING_TEXT = {
     "ar": "سيتم الدفع خلال 12-24 ساعة",
 }
 
-# --- ডাটাবেস ফাইল ---
-DB_PATH = "earnhive.db"
+# --- ডাটাবেস (Supabase PostgreSQL - স্থায়ী স্টোরেজ) ---
+# ⚠️ নিরাপত্তার জন্য এই লিংক সরাসরি কোডে না লিখে Render-এর "Environment Variables"
+# সেকশনে DATABASE_URL নামে বসাতে হবে (কারণ এতে ডাটাবেসের পাসওয়ার্ড থাকে, GitHub-এ
+# পাবলিক কোডে পাসওয়ার্ড রাখা উচিত না)।
+import os
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 # --- সাপোর্টেড ভাষা ---
 LANGUAGES = ["bn", "en", "ar"]

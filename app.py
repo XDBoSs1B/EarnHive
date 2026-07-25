@@ -17,6 +17,7 @@ from flask_cors import CORS
 
 import config
 import database as db
+import tasks_config
 
 app = Flask(__name__)
 CORS(app)
@@ -99,10 +100,6 @@ def auth():
             "referral_rates": [config.REFERRAL_LEVEL_1, config.REFERRAL_LEVEL_2],
             "min_withdraw_bkash": config.MIN_WITHDRAW_BKASH,
             "min_withdraw_usdt": config.MIN_WITHDRAW_USDT,
-            "reward_channel_join": config.REWARD_CHANNEL_JOIN,
-            "reward_ad_view": config.REWARD_AD_VIEW,
-            "ad_views_limit": config.MAX_AD_VIEWS_PER_DAY,
-            "monetag_zone_id": config.MONETAG_ZONE_ID,
             "required_channel": config.REQUIRED_CHANNEL,
         }
     })
@@ -142,50 +139,78 @@ def distribute_referral_commission(user_id, reward_amount):
                 pass
 
 
-@app.route("/api/task/channel/verify", methods=["POST"])
-def verify_channel_task():
-    # চ্যানেল জয়েন এখন /start-এই বাধ্যতামূলক (বিনামূল্যে) - তাই এখানে আর কোনো রিওয়ার্ড দেওয়া হয় না,
-    # যাতে প্রতিদিন ফাঁকা রিওয়ার্ড ক্লেইম করা না যায়।
-    return jsonify({"error": "task_disabled", "message": "Channel join is now free and required at bot start."}), 400
-
-
-@app.route("/api/task/ad/claim", methods=["POST"])
-def claim_ad_task():
-    """Monetag SDK-এর rewarded ad সম্পন্ন হওয়ার পর এই এন্ডপয়েন্ট কল হয়। দিনে MAX_AD_VIEWS_PER_DAY বার পর্যন্ত রিওয়ার্ড দেওয়া হয়।"""
+@app.route("/api/tasks", methods=["GET"])
+def get_tasks():
+    """
+    tasks_config.py-এর TASKS লিস্ট থেকে সব চালু টাস্ক + প্রতিটার বর্তমান স্ট্যাটাস (আজ কতবার হয়েছে) পাঠায়।
+    নতুন টাস্ক শুধু tasks_config.py-তে যোগ করলেই এখানে এমনিতেই দেখা যাবে, এই ফাংশন বদলাতে হবে না।
+    """
     auth_user = get_authed_user()
     if not auth_user:
         return jsonify({"error": "invalid_init_data"}), 401
     user_id = auth_user["user_id"]
 
-    count_today = db.get_task_completion_count_today(user_id, "ad_view")
-    if count_today >= config.MAX_AD_VIEWS_PER_DAY:
+    result = []
+    for t in tasks_config.get_enabled_tasks():
+        if t["limit_type"] == "daily":
+            done_count = db.get_task_completion_count_today(user_id, t["id"])
+        else:  # "once"
+            done_count = db.get_task_completion_count_ever(user_id, t["id"])
+        limit_count = t["limit_count"]
+        result.append({
+            "id": t["id"],
+            "title_key": t["title_key"],
+            "icon": t["icon"],
+            "icon_class": t["icon_class"],
+            "reward": t["reward"],
+            "limit_type": t["limit_type"],
+            "limit_count": limit_count,
+            "done_count": done_count,
+            "maxed": done_count >= limit_count,
+            "action_type": t["action_type"],
+            "sdk_src": t.get("sdk_src"),
+            "sdk_zone": t.get("sdk_zone"),
+            "sdk_function": t.get("sdk_function"),
+            "link_url": t.get("link_url"),
+            "wait_seconds": t.get("wait_seconds"),
+        })
+    return jsonify({"tasks": result})
+
+
+@app.route("/api/task/<task_id>/claim", methods=["POST"])
+def claim_task(task_id):
+    """
+    যেকোনো টাস্ক ক্লেইম করার একটামাত্র সাধারণ (generic) এন্ডপয়েন্ট।
+    tasks_config.py থেকে টাস্কের তথ্য পড়ে লিমিট চেক করে, তারপর রিওয়ার্ড দেয়।
+    """
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    task = tasks_config.get_task_by_id(task_id)
+    if not task or not task.get("enabled", True):
+        return jsonify({"error": "task_not_found"}), 404
+
+    if task["limit_type"] == "daily":
+        done_count = db.get_task_completion_count_today(user_id, task_id)
+    else:
+        done_count = db.get_task_completion_count_ever(user_id, task_id)
+
+    if done_count >= task["limit_count"]:
         return jsonify({"error": "daily_limit_reached"}), 400
 
-    reward = config.REWARD_AD_VIEW
+    reward = task["reward"]
     db.add_balance(user_id, reward)
-    db.log_task_completion(user_id, "ad_view", reward)
+    db.log_task_completion(user_id, task_id, reward)
     distribute_referral_commission(user_id, reward)
 
     user = db.get_user(user_id)
-    new_count = count_today + 1
+    new_count = done_count + 1
     return jsonify({
         "ok": True, "reward": reward, "new_balance": user["balance"],
-        "views_today": new_count, "views_limit": config.MAX_AD_VIEWS_PER_DAY
-    })
-
-
-@app.route("/api/task/status", methods=["GET"])
-def task_status():
-    auth_user = get_authed_user()
-    if not auth_user:
-        return jsonify({"error": "invalid_init_data"}), 401
-    user_id = auth_user["user_id"]
-
-    ad_views_today = db.get_task_completion_count_today(user_id, "ad_view")
-    return jsonify({
-        "ad_views_today": ad_views_today,
-        "ad_views_limit": config.MAX_AD_VIEWS_PER_DAY,
-        "ad_view_maxed": ad_views_today >= config.MAX_AD_VIEWS_PER_DAY,
+        "done_count": new_count, "limit_count": task["limit_count"],
+        "maxed": new_count >= task["limit_count"]
     })
 
 

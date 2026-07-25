@@ -140,6 +140,7 @@
   .task-card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }
   .task-card.channel-card::before{ background:var(--accent-purple-soft); }
   .task-card.ad-card::before{ background:var(--accent-cyan); }
+  .task-card.web-card::before{ background:var(--accent-gold); }
   .task-card{ transition:border-color 0.2s ease, transform 0.15s ease; }
   .task-card:active{ transform:scale(0.985); }
   .task-icon{
@@ -301,8 +302,8 @@
   .page.active{ display:block; }
   @keyframes fadeIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
 </style>
-<!-- Monetag Rewarded Ad SDK — zone পাল্টালে নিচের data-zone ও data-sdk (এবং JS-এর window.show_11346798 কল) দুটোই আপডেট করতে হবে -->
-<script src='//libtl.com/sdk.js' data-zone='11346798' data-sdk='show_11346798'></script>
+<!-- অ্যাড SDK স্ক্রিপ্ট এখন এখানে হার্ডকোড করা নেই - ব্যাকএন্ডের tasks_config.py থেকে
+     টাস্ক লিস্ট আসার পর জাভাস্ক্রিপ্ট দিয়ে স্বয়ংক্রিয়ভাবে লোড হয় (নিচে loadAdSdkScripts() দেখুন) -->
 </head>
 <body>
 <div class="hex-bg"></div>
@@ -467,6 +468,7 @@ const I18N = {
     reward_earned:"You earned", insufficient:"Balance below minimum withdrawal", withdraw_success:"Withdrawal requested!",
     today_label:"today", ad_not_ready:"Ad not ready yet, try again in a moment", ad_skipped:"Ad closed early — no reward",
     daily_limit_reached:"Daily ad limit reached — come back tomorrow",
+    task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait",
   },
   bn: {
     your_balance:"আপনার ব্যালেন্স", team_l1:"টিম L1", team_l2:"টিম L2", team_l3:"টিম L3",
@@ -488,6 +490,7 @@ const I18N = {
     reward_earned:"আপনি পেয়েছেন", insufficient:"ব্যালেন্স মিনিমাম উইথড্রর চেয়ে কম", withdraw_success:"উইথড্র রিকোয়েস্ট করা হয়েছে!",
     today_label:"আজ", ad_not_ready:"অ্যাড এখনো রেডি হয়নি, একটু পর আবার চেষ্টা করুন", ad_skipped:"অ্যাড আগেই বন্ধ করেছেন — রিওয়ার্ড পাবেন না",
     daily_limit_reached:"আজকের অ্যাড লিমিট শেষ — কাল আবার আসুন",
+    task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন",
   },
   ar: {
     your_balance:"رصيدك", team_l1:"الفريق ١", team_l2:"الفريق ٢", team_l3:"الفريق ٣",
@@ -509,10 +512,11 @@ const I18N = {
     reward_earned:"لقد ربحت", insufficient:"الرصيد أقل من الحد الأدنى للسحب", withdraw_success:"تم طلب السحب!",
     today_label:"اليوم", ad_not_ready:"الإعلان غير جاهز بعد، حاول مرة أخرى بعد قليل", ad_skipped:"تم إغلاق الإعلان مبكرًا — لا مكافأة",
     daily_limit_reached:"تم الوصول للحد اليومي — عد غدًا",
+    task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر",
   }
 };
 let currentLang = "en";
-let state = { balance:0, total_earned:0, referrals:{level1:0,level2:0}, referralBreakdown:[], adViewsToday:0, cfg:{}, taskStatus:{} };
+let state = { balance:0, total_earned:0, referrals:{level1:0,level2:0}, referralBreakdown:[], tasks:[], cfg:{} };
 let selectedMethod = "bkash";
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -653,9 +657,8 @@ async function bootstrap(){
     currentLang = data.language || "en";
     document.querySelectorAll("#langPill button").forEach(b=>b.classList.toggle("active", b.dataset.lang===currentLang));
 
-    const statusData = await apiGet("/api/task/status");
-    state.taskStatus = statusData;
-    state.adViewsToday = statusData.ad_views_today || 0;
+    state.tasks = (await apiGet("/api/tasks")).tasks || [];
+    loadAdSdkScripts(state.tasks);
 
     const refData = await apiGet("/api/referral");
     document.getElementById("referralLink").textContent = refData.link;
@@ -684,60 +687,122 @@ function renderAll(){
   applyTranslations();
 }
 
+const loadedSdkZones = new Set();
+function loadAdSdkScripts(tasks){
+  tasks.forEach(task=>{
+    if(task.action_type === "ad_sdk" && task.sdk_src && task.sdk_zone && !loadedSdkZones.has(task.sdk_zone)){
+      const s = document.createElement("script");
+      s.src = task.sdk_src;
+      s.setAttribute("data-zone", task.sdk_zone);
+      s.setAttribute("data-sdk", task.sdk_function);
+      document.head.appendChild(s);
+      loadedSdkZones.add(task.sdk_zone);
+    }
+  });
+}
+
 /* ======================================================
-   TASKS RENDERING
+   TASKS RENDERING — সম্পূর্ণ জেনেরিক (generic)।
+   ব্যাকএন্ডের tasks_config.py-তে নতুন টাস্ক যোগ করলে
+   এই কোড না বদলিয়েই সেটা এখানে দেখা যাবে।
    ====================================================== */
-function taskCardHTML(id, icon, iconClass, titleKey, reward, done, subtitle){
+
+// প্রতিটা টাস্কের নিজস্ব সাময়িক অবস্থা (idle/waiting/ready) মনে রাখার জন্য
+const taskUIState = {}; // { taskId: { stage: "idle"|"waiting"|"ready", countdown: n } }
+
+function taskCardHTML(task){
+  const uiState = taskUIState[task.id] || { stage: "idle" };
+  const maxed = task.maxed;
+  let btnText = task.action_type === "external_link" ? tr("visit_site") : tr("claim");
+  let disabled = false;
+
+  if(maxed){
+    btnText = tr("done"); disabled = true;
+  } else if(task.action_type === "external_link"){
+    if(uiState.stage === "waiting"){ btnText = `${tr("please_wait")} ${uiState.countdown}s`; disabled = true; }
+    else if(uiState.stage === "ready"){ btnText = tr("claim"); }
+    else { btnText = tr("visit_site"); }
+  }
+
+  const subtitle = `${task.done_count}/${task.limit_count} ${task.limit_type === "daily" ? tr("today_label") : ""}`.trim();
+
   return `
-    <div class="task-card ${id}-card">
-      <div class="task-icon ${iconClass}">${icon}</div>
+    <div class="task-card ${task.id}-card">
+      <div class="task-icon ${task.icon_class}">${task.icon}</div>
       <div class="task-info">
-        <div class="task-title">${tr(titleKey)}</div>
-        <div class="task-reward">+$${reward.toFixed(4)}${subtitle ? " · " + subtitle : ""}</div>
+        <div class="task-title">${tr(task.title_key)}</div>
+        <div class="task-reward">+$${task.reward.toFixed(4)} · ${subtitle}</div>
       </div>
-      <button class="task-btn ${done?'done':''}" id="btn-${id}" ${done?'disabled':''}>${done?tr('done'):tr('claim')}</button>
+      <button class="task-btn ${maxed?'done':''}" id="btn-task-${task.id}" ${disabled?'disabled':''}>${btnText}</button>
     </div>`;
 }
 
 function renderTasks(){
-  const cfg = state.cfg;
-  const viewsToday = state.adViewsToday || 0;
-  const viewsLimit = cfg.ad_views_limit || 10;
-  const maxed = viewsToday >= viewsLimit;
-  const subtitle = `${viewsToday}/${viewsLimit} ${tr("today_label")}`;
-
-  const html = taskCardHTML("ad","📺","ad","task_ad", cfg.reward_ad_view, maxed, subtitle);
+  const tasks = state.tasks || [];
+  const html = tasks.map(taskCardHTML).join("");
 
   document.getElementById("taskList").innerHTML = html;
   document.getElementById("homeTaskPreview").innerHTML = html;
 
-  ["ad"].forEach(id=>{
-    document.querySelectorAll(`#btn-${id}`).forEach(btn=>{
-      btn.addEventListener("click", ()=>handleTaskClick(id));
+  tasks.forEach(task=>{
+    document.querySelectorAll(`#btn-task-${task.id}`).forEach(btn=>{
+      btn.addEventListener("click", ()=>handleTaskClick(task));
     });
   });
 }
 
-async function handleTaskClick(taskId){
-  if(taskId === "ad"){
-    if(typeof window.show_11346798 !== "function"){
+async function handleTaskClick(task){
+  if(task.action_type === "ad_sdk"){
+    const sdkFn = window[task.sdk_function];
+    if(typeof sdkFn !== "function"){
       showToast(tr("ad_not_ready"));
       return;
     }
     try{
-      await window.show_11346798(); // Monetag rewarded ad — এটা resolve হয় শুধু ইউজার সম্পূর্ণ অ্যাড দেখলে
+      await sdkFn(); // Rewarded ad SDK — এটা resolve হয় শুধু ইউজার সম্পূর্ণ অ্যাড দেখলে
     } catch(e){
       showToast(tr("ad_skipped"));
       return; // ইউজার অ্যাড স্কিপ/বন্ধ করলে কোনো রিওয়ার্ড দেওয়া হবে না
     }
-    const res = await apiPost("/api/task/ad/claim", {});
-    if(res.error === "daily_limit_reached"){ showToast(tr("daily_limit_reached")); renderAll(); return; }
-    if(res.ok){
-      state.balance = res.new_balance;
-      state.adViewsToday = res.views_today;
-      showToast(`${tr("reward_earned")} $${res.reward.toFixed(4)}`);
-      renderAll();
+    await claimTask(task);
+
+  } else if(task.action_type === "external_link"){
+    const uiState = taskUIState[task.id] || { stage: "idle" };
+    if(uiState.stage === "idle" || !uiState.stage){
+      if(tg) tg.openLink(task.link_url); else window.open(task.link_url, "_blank");
+      let remaining = task.wait_seconds || 15;
+      taskUIState[task.id] = { stage: "waiting", countdown: remaining };
+      renderTasks();
+      const timer = setInterval(()=>{
+        remaining -= 1;
+        taskUIState[task.id] = { stage: "waiting", countdown: remaining };
+        if(remaining <= 0){
+          clearInterval(timer);
+          taskUIState[task.id] = { stage: "ready", countdown: 0 };
+        }
+        renderTasks();
+      }, 1000);
+    } else if(uiState.stage === "ready"){
+      await claimTask(task);
     }
+  }
+}
+
+async function claimTask(task){
+  const res = await apiPost(`/api/task/${task.id}/claim`, {});
+  if(res.error === "daily_limit_reached"){
+    showToast(tr("daily_limit_reached"));
+    task.maxed = true;
+    renderAll();
+    return;
+  }
+  if(res.ok){
+    state.balance = res.new_balance;
+    task.done_count = res.done_count;
+    task.maxed = res.maxed;
+    taskUIState[task.id] = { stage: "idle" };
+    showToast(`${tr("reward_earned")} $${res.reward.toFixed(4)}`);
+    renderAll();
   }
 }
 
