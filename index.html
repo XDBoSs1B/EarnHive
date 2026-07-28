@@ -260,6 +260,7 @@
   }
   .method-name{ font-weight:700; margin-top:6px; font-size:14px; }
   .method-min{ font-size:11px; color:var(--text-low); margin-top:2px; }
+  .available-balance{ font-size:12.5px; color:var(--text-mid); margin-bottom:8px; text-align:right; font-weight:600; }
   .input-field{
     width:100%; background:var(--bg-2); border:1px solid rgba(255,255,255,0.1); border-radius:var(--radius-sm);
     padding:14px; color:var(--text-hi); font-size:14px; margin-bottom:14px;
@@ -422,6 +423,8 @@
         <div class="method-min">BEP20 · min $5</div>
       </div>
     </div>
+    <div class="available-balance" id="availableBalanceText">Available: $0.0000</div>
+    <input type="number" step="0.0001" min="0" class="input-field" id="amountInput" placeholder="Amount ($)">
     <input type="text" class="input-field" id="accountInput" placeholder="bKash number">
     <button class="submit-btn" id="submitWithdraw" data-i="request_withdraw">Request Withdrawal</button>
     <p class="helper-text" data-i="processing_note">Payments are processed within 12–24 hours.</p>
@@ -466,6 +469,7 @@ const I18N = {
     claim:"Claim", done:"Done", verify:"Verify",
     copied:"Link copied!", already_done:"Already completed today", not_joined:"You haven't joined yet",
     reward_earned:"You earned", insufficient:"Balance below minimum withdrawal", withdraw_success:"Withdrawal requested!",
+    available:"Available", enter_valid_amount:"Enter a valid amount", min_amount_is:"Minimum amount is", amount_exceeds_balance:"Amount exceeds your balance",
     today_label:"today", ad_not_ready:"Ad not ready yet, try again in a moment", ad_skipped:"Ad closed early — no reward",
     daily_limit_reached:"Daily ad limit reached — come back tomorrow",
     task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait",
@@ -488,6 +492,7 @@ const I18N = {
     claim:"নিন", done:"সম্পন্ন", verify:"চেক করুন",
     copied:"লিংক কপি হয়েছে!", already_done:"আজকে ইতিমধ্যে সম্পন্ন হয়েছে", not_joined:"আপনি এখনো জয়েন করেননি",
     reward_earned:"আপনি পেয়েছেন", insufficient:"ব্যালেন্স মিনিমাম উইথড্রর চেয়ে কম", withdraw_success:"উইথড্র রিকোয়েস্ট করা হয়েছে!",
+    available:"উপলব্ধ", enter_valid_amount:"সঠিক পরিমাণ লিখুন", min_amount_is:"সর্বনিম্ন পরিমাণ", amount_exceeds_balance:"পরিমাণ আপনার ব্যালেন্সের চেয়ে বেশি",
     today_label:"আজ", ad_not_ready:"অ্যাড এখনো রেডি হয়নি, একটু পর আবার চেষ্টা করুন", ad_skipped:"অ্যাড আগেই বন্ধ করেছেন — রিওয়ার্ড পাবেন না",
     daily_limit_reached:"আজকের অ্যাড লিমিট শেষ — কাল আবার আসুন",
     task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন",
@@ -510,6 +515,7 @@ const I18N = {
     claim:"احصل", done:"تم", verify:"تحقق",
     copied:"تم نسخ الرابط!", already_done:"تم الإنجاز اليوم بالفعل", not_joined:"لم تنضم بعد",
     reward_earned:"لقد ربحت", insufficient:"الرصيد أقل من الحد الأدنى للسحب", withdraw_success:"تم طلب السحب!",
+    available:"المتاح", enter_valid_amount:"أدخل مبلغًا صحيحًا", min_amount_is:"الحد الأدنى للمبلغ هو", amount_exceeds_balance:"المبلغ يتجاوز رصيدك",
     today_label:"اليوم", ad_not_ready:"الإعلان غير جاهز بعد، حاول مرة أخرى بعد قليل", ad_skipped:"تم إغلاق الإعلان مبكرًا — لا مكافأة",
     daily_limit_reached:"تم الوصول للحد اليومي — عد غدًا",
     task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر",
@@ -648,7 +654,9 @@ async function apiGet(path){
    ====================================================== */
 async function bootstrap(){
   try{
-    const data = await apiPost("/api/auth", {});
+    const urlParams = new URLSearchParams(window.location.search);
+    const startParam = urlParams.get("start_param") || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || "";
+    const data = await apiPost("/api/auth", { start_param: startParam });
     if (data.error) { showToast("Auth failed"); return; }
     state.balance = data.balance;
     state.total_earned = data.total_earned;
@@ -684,6 +692,8 @@ function renderAll(){
     document.getElementById("pctL1").textContent = state.cfg.referral_rates[0] + "%";
     document.getElementById("pctL2").textContent = state.cfg.referral_rates[1] + "%";
   }
+  const availEl = document.getElementById("availableBalanceText");
+  if(availEl) availEl.textContent = `${tr("available")}: $${state.balance.toFixed(4)}`;
   applyTranslations();
 }
 
@@ -833,13 +843,24 @@ function selectMethod(method){
 
 document.getElementById("submitWithdraw").addEventListener("click", async ()=>{
   const accountInfo = document.getElementById("accountInput").value.trim();
+  const amountStr = document.getElementById("amountInput").value.trim();
+  const amount = parseFloat(amountStr);
+
   if(!accountInfo) return;
-  const res = await apiPost("/api/withdraw", {method:selectedMethod, account_info:accountInfo});
+  if(!amountStr || isNaN(amount) || amount <= 0){ showToast(tr("enter_valid_amount")); return; }
+
+  const minRequired = selectedMethod === "bkash" ? state.cfg.min_withdraw_bkash : state.cfg.min_withdraw_usdt;
+  if(amount < minRequired){ showToast(`${tr("min_amount_is")} $${minRequired}`); return; }
+  if(amount > state.balance){ showToast(tr("amount_exceeds_balance")); return; }
+
+  const res = await apiPost("/api/withdraw", {method:selectedMethod, account_info:accountInfo, amount:amount});
   if(res.error === "insufficient_balance"){ showToast(tr("insufficient")); return; }
+  if(res.error === "invalid_amount"){ showToast(tr("enter_valid_amount")); return; }
   if(res.ok){
-    state.balance = 0;
+    state.balance = res.new_balance;
     showToast(tr("withdraw_success"));
     document.getElementById("accountInput").value = "";
+    document.getElementById("amountInput").value = "";
     renderAll();
   }
 });

@@ -76,7 +76,11 @@ def auth():
 
     if not existing:
         referred_by = None
-        start_param = auth_user.get("start_param")
+        # initData-তে start_param সবসময় থাকে না (Telegram স্বয়ংক্রিয়ভাবে আমাদের কাস্টম
+        # URL প্যারামিটার initData-তে যোগ করে না) - তাই ফ্রন্টএন্ড URL থেকে সরাসরি পাঠানো
+        # start_param-কেই আসল উৎস হিসেবে ব্যবহার করা হচ্ছে।
+        body = request.get_json(silent=True) or {}
+        start_param = body.get("start_param") or auth_user.get("start_param")
         if start_param and start_param.startswith("ref_"):
             try:
                 ref_id = int(start_param.replace("ref_", ""))
@@ -244,17 +248,28 @@ def request_withdraw():
 
     method = request.json.get("method")
     account_info = request.json.get("account_info", "").strip()
+    amount_raw = request.json.get("amount")
 
     if method not in ("bkash", "usdt") or not account_info:
         return jsonify({"error": "invalid_request"}), 400
 
+    try:
+        amount = float(amount_raw)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid_amount"}), 400
+
+    if amount <= 0:
+        return jsonify({"error": "invalid_amount"}), 400
+
     user = db.get_user(user_id)
     min_amount = config.MIN_WITHDRAW_BKASH if method == "bkash" else config.MIN_WITHDRAW_USDT
 
-    if user["balance"] < min_amount:
+    if amount < min_amount:
         return jsonify({"error": "insufficient_balance", "min_required": min_amount}), 400
 
-    amount = user["balance"]
+    if amount > user["balance"]:
+        return jsonify({"error": "invalid_amount"}), 400
+
     db.deduct_balance(user_id, amount)
     db.create_withdrawal(user_id, method, amount, account_info)
 
@@ -268,7 +283,8 @@ def request_withdraw():
         except Exception:
             pass
 
-    return jsonify({"ok": True, "amount": amount})
+    updated_user = db.get_user(user_id)
+    return jsonify({"ok": True, "amount": amount, "new_balance": updated_user["balance"]})
 
 
 # ================= TELEGRAM BOT (WEBHOOK) =================
