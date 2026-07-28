@@ -32,7 +32,7 @@ TASKS = [
         "title_key": "task_website",
         "icon": "🌐",
         "icon_class": "web",
-        "reward": 0.0002,
+        "reward": 1,
         "limit_type": "daily",
         "limit_count": 1,
         "action_type": "external_link",
