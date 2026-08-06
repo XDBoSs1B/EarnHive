@@ -26,8 +26,9 @@ REFERRAL_LEVEL_2 = 5    # Indirect
 # যোগ/পরিবর্তন করতে শুধু ওই ফাইলটাই এডিট করুন, এখানে কিছু বদলাতে হবে না।
 
 # --- উইথড্র মিনিমাম (সবসময় $ এ) ---
-MIN_WITHDRAW_BKASH = 1.00
+MIN_WITHDRAW_BKASH = 2.00
 MIN_WITHDRAW_USDT = 5.00
+MIN_WITHDRAW_FAUCETPAY = 3.00
 
 # --- bKash কনভার্সন রেট ($1 = কত টাকা) ---
 # এডমিন প্যানেল থেকেও বদলানো যাবে, এটা শুধু ডিফল্ট

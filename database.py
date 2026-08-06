@@ -107,6 +107,17 @@ def set_language(user_id, lang):
     conn.close()
 
 
+def set_joined_channel(user_id, joined=True):
+    """ইউজার রিকোয়ার্ড চ্যানেলে জয়েন করেছে কিনা - ভেরিফাই হওয়ার পর ক্যাশ করে রাখে,
+    যাতে বারবার Telegram API কল করতে না হয়।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET joined_channel=%s WHERE user_id=%s", (1 if joined else 0, user_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def add_balance(user_id, amount):
     conn = get_conn()
     cur = conn.cursor()

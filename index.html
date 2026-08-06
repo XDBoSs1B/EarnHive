@@ -246,7 +246,8 @@
   .tl-dot.you{ background:var(--accent-purple-soft); }
 
   /* ---------- Withdraw ---------- */
-  .method-grid{ display:flex; gap:10px; margin-bottom:16px; }
+  .method-grid{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .method-grid .method-card{ min-width:96px; }
   .method-card{
     flex:1; background:var(--bg-2); border:2px solid transparent; border-radius:var(--radius-md);
     padding:16px 10px; text-align:center; cursor:pointer;
@@ -282,6 +283,25 @@
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
+  /* ---------- Channel Join Gate ---------- */
+  .channel-gate{
+    position:fixed; inset:0; z-index:999;
+    background:rgba(10,12,28,0.97); backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .channel-gate-card{
+    background:var(--bg-2); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-lg);
+    padding:34px 24px; text-align:center; max-width:340px; width:100%;
+    box-shadow:0 20px 50px rgba(0,0,0,0.5);
+  }
+  .channel-gate-icon{ font-size:44px; margin-bottom:10px; }
+  .channel-gate-desc{ color:var(--text-mid); font-size:13.5px; line-height:1.55; margin:8px 0 24px; }
+  .gate-verify-btn{
+    width:100%; padding:15px; border-radius:var(--radius-sm); font-weight:700; font-size:15px;
+    background:transparent; border:2px solid var(--accent-purple); color:var(--text-hi);
+    cursor:pointer; margin-top:12px;
+  }
+
   /* ---------- Bottom nav ---------- */
   .navbar{
     position:fixed; bottom:16px; left:16px; right:16px; z-index:10;
@@ -307,6 +327,18 @@
      টাস্ক লিস্ট আসার পর জাভাস্ক্রিপ্ট দিয়ে স্বয়ংক্রিয়ভাবে লোড হয় (নিচে loadAdSdkScripts() দেখুন) -->
 </head>
 <body>
+
+<!-- ================= CHANNEL JOIN GATE (না জয়েন করলে অ্যাপ ব্যবহার করা যাবে না) ================= -->
+<div class="channel-gate" id="channelGate" style="display:none;">
+  <div class="channel-gate-card">
+    <div class="channel-gate-icon">🔒</div>
+    <h2 class="display" data-i="gate_title">Join Our Channel</h2>
+    <p class="channel-gate-desc" data-i="gate_desc">You must join our official channel first to use EarnHive and start earning.</p>
+    <button class="submit-btn" id="btnOpenChannel" data-i="task_join">Join Channel</button>
+    <button class="gate-verify-btn" id="btnVerifyJoin" data-i="verify">Verify</button>
+  </div>
+</div>
+
 <div class="hex-bg"></div>
 <span class="particle p1"></span><span class="particle p2"></span>
 <span class="particle p3"></span><span class="particle p4"></span>
@@ -415,12 +447,17 @@
       <div class="method-card selected" id="methodBkash" data-method="bkash">
         <div class="bkash-badge">bKash</div>
         <div class="method-name">bKash</div>
-        <div class="method-min">min $1</div>
+        <div class="method-min" id="minBkashText">min $2</div>
       </div>
       <div class="method-card" id="methodUsdt" data-method="usdt">
         <div class="method-emoji">💵</div>
         <div class="method-name">USDT</div>
-        <div class="method-min">BEP20 · min $5</div>
+        <div class="method-min" id="minUsdtText">BEP20 · min $5</div>
+      </div>
+      <div class="method-card" id="methodFaucetpay" data-method="faucetpay">
+        <div class="method-emoji">🚰</div>
+        <div class="method-name">FaucetPay</div>
+        <div class="method-min" id="minFaucetpayText">min $3</div>
       </div>
     </div>
     <div class="available-balance" id="availableBalanceText">Available: $0.0000</div>
@@ -473,6 +510,7 @@ const I18N = {
     today_label:"today", ad_not_ready:"Ad not ready yet, try again in a moment", ad_skipped:"Ad closed early — no reward",
     daily_limit_reached:"Daily ad limit reached — come back tomorrow",
     task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait",
+    gate_title:"Join Our Channel", gate_desc:"You must join our official channel first to use EarnHive and start earning.",
   },
   bn: {
     your_balance:"আপনার ব্যালেন্স", team_l1:"টিম L1", team_l2:"টিম L2", team_l3:"টিম L3",
@@ -496,6 +534,7 @@ const I18N = {
     today_label:"আজ", ad_not_ready:"অ্যাড এখনো রেডি হয়নি, একটু পর আবার চেষ্টা করুন", ad_skipped:"অ্যাড আগেই বন্ধ করেছেন — রিওয়ার্ড পাবেন না",
     daily_limit_reached:"আজকের অ্যাড লিমিট শেষ — কাল আবার আসুন",
     task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন",
+    gate_title:"আমাদের চ্যানেলে জয়েন করুন", gate_desc:"EarnHive ব্যবহার করে আয় শুরু করতে হলে আগে আমাদের অফিসিয়াল চ্যানেলে জয়েন করতে হবে।",
   },
   ar: {
     your_balance:"رصيدك", team_l1:"الفريق ١", team_l2:"الفريق ٢", team_l3:"الفريق ٣",
@@ -519,6 +558,7 @@ const I18N = {
     today_label:"اليوم", ad_not_ready:"الإعلان غير جاهز بعد، حاول مرة أخرى بعد قليل", ad_skipped:"تم إغلاق الإعلان مبكرًا — لا مكافأة",
     daily_limit_reached:"تم الوصول للحد اليومي — عد غدًا",
     task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر",
+    gate_title:"انضم إلى قناتنا", gate_desc:"يجب عليك الانضمام إلى قناتنا الرسمية أولاً لاستخدام EarnHive والبدء في الربح.",
   }
 };
 let currentLang = "en";
@@ -551,7 +591,7 @@ function applyTranslations(){
     el.textContent = tr(el.getAttribute("data-i"));
   });
   document.getElementById("accountInput").placeholder =
-    selectedMethod === "bkash" ? "bKash number" : "USDT (BEP20) wallet address";
+    { bkash: "bKash number", usdt: "USDT (BEP20) wallet address", faucetpay: "FaucetPay email address" }[selectedMethod];
   document.body.dir = currentLang === "ar" ? "rtl" : "ltr";
   renderTasks();
   renderReferralBreakdown();
@@ -664,7 +704,47 @@ async function bootstrap(){
     state.cfg = data.config;
     currentLang = data.language || "en";
     document.querySelectorAll("#langPill button").forEach(b=>b.classList.toggle("active", b.dataset.lang===currentLang));
+    applyTranslations();
 
+    if(!data.joined_channel){
+      showChannelGate();
+      return; // চ্যানেলে জয়েন/ভেরিফাই না করা পর্যন্ত টাস্ক/রেফারেল ডেটা লোড হবে না
+    }
+    await loadAppData();
+  } catch(e){
+    showToast("Connection error");
+  }
+}
+
+/* ======================================================
+   CHANNEL JOIN GATE
+   ====================================================== */
+function showChannelGate(){
+  document.getElementById("channelGate").style.display = "flex";
+}
+function hideChannelGate(){
+  document.getElementById("channelGate").style.display = "none";
+}
+
+document.getElementById("btnOpenChannel").addEventListener("click", ()=>{
+  const channel = (state.cfg && state.cfg.required_channel || "").replace("@", "");
+  if(!channel) return;
+  const url = `https://t.me/${channel}`;
+  if(tg) tg.openTelegramLink(url); else window.open(url, "_blank");
+});
+
+document.getElementById("btnVerifyJoin").addEventListener("click", async ()=>{
+  const res = await apiPost("/api/verify_channel", {});
+  if(res.joined){
+    hideChannelGate();
+    await loadAppData();
+  } else {
+    showToast(tr("not_joined"));
+  }
+});
+
+async function loadAppData(){
+  try{
     state.tasks = (await apiGet("/api/tasks")).tasks || [];
     loadAdSdkScripts(state.tasks);
 
@@ -694,6 +774,9 @@ function renderAll(){
   }
   const availEl = document.getElementById("availableBalanceText");
   if(availEl) availEl.textContent = `${tr("available")}: $${state.balance.toFixed(4)}`;
+  if(state.cfg.min_withdraw_bkash != null) document.getElementById("minBkashText").textContent = `min $${state.cfg.min_withdraw_bkash}`;
+  if(state.cfg.min_withdraw_usdt != null) document.getElementById("minUsdtText").textContent = `BEP20 · min $${state.cfg.min_withdraw_usdt}`;
+  if(state.cfg.min_withdraw_faucetpay != null) document.getElementById("minFaucetpayText").textContent = `min $${state.cfg.min_withdraw_faucetpay}`;
   applyTranslations();
 }
 
@@ -832,13 +915,23 @@ document.getElementById("btnShare").addEventListener("click", ()=>{
    ====================================================== */
 document.getElementById("methodBkash").addEventListener("click", ()=>selectMethod("bkash"));
 document.getElementById("methodUsdt").addEventListener("click", ()=>selectMethod("usdt"));
+document.getElementById("methodFaucetpay").addEventListener("click", ()=>selectMethod("faucetpay"));
+
+const ACCOUNT_PLACEHOLDERS = {
+  bkash: "bKash number",
+  usdt: "USDT (BEP20) wallet address",
+  faucetpay: "FaucetPay email address",
+};
+function minWithdrawFor(method){
+  return { bkash: state.cfg.min_withdraw_bkash, usdt: state.cfg.min_withdraw_usdt, faucetpay: state.cfg.min_withdraw_faucetpay }[method];
+}
 
 function selectMethod(method){
   selectedMethod = method;
   document.getElementById("methodBkash").classList.toggle("selected", method==="bkash");
   document.getElementById("methodUsdt").classList.toggle("selected", method==="usdt");
-  document.getElementById("accountInput").placeholder =
-    method === "bkash" ? "bKash number" : "USDT (BEP20) wallet address";
+  document.getElementById("methodFaucetpay").classList.toggle("selected", method==="faucetpay");
+  document.getElementById("accountInput").placeholder = ACCOUNT_PLACEHOLDERS[method];
 }
 
 document.getElementById("submitWithdraw").addEventListener("click", async ()=>{
@@ -849,7 +942,7 @@ document.getElementById("submitWithdraw").addEventListener("click", async ()=>{
   if(!accountInfo) return;
   if(!amountStr || isNaN(amount) || amount <= 0){ showToast(tr("enter_valid_amount")); return; }
 
-  const minRequired = selectedMethod === "bkash" ? state.cfg.min_withdraw_bkash : state.cfg.min_withdraw_usdt;
+  const minRequired = minWithdrawFor(selectedMethod);
   if(amount < minRequired){ showToast(`${tr("min_amount_is")} $${minRequired}`); return; }
   if(amount > state.balance){ showToast(tr("amount_exceeds_balance")); return; }
 

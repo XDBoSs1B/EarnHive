@@ -63,6 +63,24 @@ def get_authed_user():
     return validate_init_data(init_data)
 
 
+def require_channel_member(user_id):
+    """
+    ইউজার রিকোয়ার্ড চ্যানেলে জয়েন করেছে কিনা চেক করে (সার্ভার-সাইড, তাই কেউ
+    ফ্রন্টএন্ড বাইপাস করে সরাসরি API কল করলেও এড়াতে পারবে না)।
+    আগে DB-তে ক্যাশড ফ্ল্যাগ চেক করে - একবার true হয়ে গেলে বারবার Telegram API
+    কল করতে হয় না। এখনো জয়েন না থাকলে লাইভ চেক করে এবং true হলে ক্যাশ করে রাখে।
+    is_channel_member() ফাংশনটা এই ফাইলের নিচে (TELEGRAM BOT সেকশনে) সংজ্ঞায়িত -
+    Python এ ফাংশন কল-টাইমে resolve হয় বলে এটা এখানে ব্যবহার করতে সমস্যা নেই।
+    """
+    user = db.get_user(user_id)
+    if user and user.get("joined_channel"):
+        return True
+    if is_channel_member(user_id):
+        db.set_joined_channel(user_id, True)
+        return True
+    return False
+
+
 # ================= MINI APP API =================
 
 @app.route("/api/auth", methods=["POST"])
@@ -92,6 +110,7 @@ def auth():
         existing = db.get_user(user_id)
 
     l1, l2 = db.get_referral_counts(user_id)
+    joined_channel = require_channel_member(user_id)
 
     return jsonify({
         "user_id": existing["user_id"],
@@ -100,10 +119,12 @@ def auth():
         "balance": existing["balance"],
         "total_earned": existing["total_earned"],
         "referrals": {"level1": l1, "level2": l2},
+        "joined_channel": joined_channel,
         "config": {
             "referral_rates": [config.REFERRAL_LEVEL_1, config.REFERRAL_LEVEL_2],
             "min_withdraw_bkash": config.MIN_WITHDRAW_BKASH,
             "min_withdraw_usdt": config.MIN_WITHDRAW_USDT,
+            "min_withdraw_faucetpay": config.MIN_WITHDRAW_FAUCETPAY,
             "required_channel": config.REQUIRED_CHANNEL,
         }
     })
@@ -143,6 +164,21 @@ def distribute_referral_commission(user_id, reward_amount):
                 pass
 
 
+@app.route("/api/verify_channel", methods=["POST"])
+def verify_channel():
+    """Mini App থেকে ইউজার 'জয়েন করেছি - ভেরিফাই করুন' চাপলে এটা কল হয়।
+    লাইভ Telegram API চেক করে, জয়েন থাকলে DB-তে ক্যাশ করে রাখে।"""
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    joined = is_channel_member(user_id)
+    if joined:
+        db.set_joined_channel(user_id, True)
+    return jsonify({"ok": True, "joined": joined})
+
+
 @app.route("/api/tasks", methods=["GET"])
 def get_tasks():
     """
@@ -153,6 +189,9 @@ def get_tasks():
     if not auth_user:
         return jsonify({"error": "invalid_init_data"}), 401
     user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
 
     result = []
     for t in tasks_config.get_enabled_tasks():
@@ -191,6 +230,9 @@ def claim_task(task_id):
     if not auth_user:
         return jsonify({"error": "invalid_init_data"}), 401
     user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
 
     task = tasks_config.get_task_by_id(task_id)
     if not task or not task.get("enabled", True):
@@ -246,11 +288,14 @@ def request_withdraw():
         return jsonify({"error": "invalid_init_data"}), 401
     user_id = auth_user["user_id"]
 
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
+
     method = request.json.get("method")
     account_info = request.json.get("account_info", "").strip()
     amount_raw = request.json.get("amount")
 
-    if method not in ("bkash", "usdt") or not account_info:
+    if method not in ("bkash", "usdt", "faucetpay") or not account_info:
         return jsonify({"error": "invalid_request"}), 400
 
     try:
@@ -262,7 +307,11 @@ def request_withdraw():
         return jsonify({"error": "invalid_amount"}), 400
 
     user = db.get_user(user_id)
-    min_amount = config.MIN_WITHDRAW_BKASH if method == "bkash" else config.MIN_WITHDRAW_USDT
+    min_amount = {
+        "bkash": config.MIN_WITHDRAW_BKASH,
+        "usdt": config.MIN_WITHDRAW_USDT,
+        "faucetpay": config.MIN_WITHDRAW_FAUCETPAY,
+    }[method]
 
     if amount < min_amount:
         return jsonify({"error": "insufficient_balance", "min_required": min_amount}), 400
