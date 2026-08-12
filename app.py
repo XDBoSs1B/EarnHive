@@ -260,6 +260,94 @@ def claim_task(task_id):
     })
 
 
+@app.route("/api/cpalead/config", methods=["GET"])
+def cpalead_config():
+    """
+    Mini App-এর ফ্রন্টএন্ড (ইউজারের নিজের ফোনে চলা ব্রাউজার) এখান থেকে publisher_id
+    আর subid নিয়ে, তারপর CPAlead-এর Offers API-কে *সরাসরি নিজে থেকেই* কল করবে
+    (country=user&device=user দিয়ে) - যাতে CPAlead সত্যিকারের ইউজার IP/User-Agent
+    দেখে সঠিক দেশ ও ডিভাইস অনুযায়ী offer ফেরত দেয়। আমাদের সার্ভার থেকে এই কল করলে
+    CPAlead আমাদের সার্ভারের IP/লোকেশন দেখত, যেটা ভুল হতো।
+
+    subid হিসেবে আমরা ইউজারের নিজস্ব verified Telegram user_id পাঠাচ্ছি (initData
+    দিয়ে ভেরিফাই করা, ক্লায়েন্টের দেওয়া কোনো মান না) - যাতে postback ফিরে এলে
+    আমরা নিশ্চিতভাবে সঠিক ইউজারকে ক্রেডিট দিতে পারি।
+    """
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
+
+    if not config.CPALEAD_PUBLISHER_ID:
+        return jsonify({"enabled": False})
+
+    return jsonify({
+        "enabled": True,
+        "publisher_id": config.CPALEAD_PUBLISHER_ID,
+        "subid": str(user_id),
+        "easy_max_reward": config.CPALEAD_EASY_MAX_REWARD,
+    })
+
+
+@app.route("/api/cpalead/postback", methods=["GET"])
+def cpalead_postback():
+    """
+    CPAlead-এর সার্ভার এই এন্ডপয়েন্টে কল করবে যখন কোনো offer সত্যিকারের conversion
+    (verified completion) হিসেবে গণ্য হয়। এটা ইউজারের ব্রাউজার থেকে না, CPAlead-এর
+    নিজের সার্ভার থেকে সরাসরি কল হয় (server-to-server) - তাই Telegram initData
+    ভেরিফিকেশন এখানে প্রযোজ্য না, বরং password প্যারামিটার দিয়ে যাচাই করা হয়।
+
+    CPAlead dashboard-এ (Settings > Global Postback / Offerwall Postback) এই URL বসাতে হবে:
+    {MINI_APP_BACKEND_URL}/api/cpalead/postback?subid={subid}&lead_id={lead_id}&campaign_id={campaign_id}&campaign_name={campaign_name}&payout={payout}&password=YOUR_SECRET
+    """
+    password = request.args.get("password", "")
+    if not config.CPALEAD_POSTBACK_PASSWORD or password != config.CPALEAD_POSTBACK_PASSWORD:
+        return jsonify({"status": "error", "message": "invalid_password"}), 403
+
+    subid = request.args.get("subid", "").strip()
+    lead_id = request.args.get("lead_id", "").strip()
+    offer_id = request.args.get("campaign_id", "").strip()
+    campaign_name = request.args.get("campaign_name", "").strip()
+    payout_raw = request.args.get("payout", "0")
+
+    if not subid or not lead_id:
+        return jsonify({"status": "error", "message": "missing_subid_or_lead_id"}), 400
+
+    try:
+        user_id = int(subid)
+    except ValueError:
+        return jsonify({"status": "error", "message": "invalid_subid"}), 400
+
+    try:
+        payout = float(payout_raw)
+    except (TypeError, ValueError):
+        payout = 0.0
+
+    if payout <= 0:
+        return jsonify({"status": "error", "message": "invalid_payout"}), 400
+
+    user = db.get_user(user_id)
+    if not user:
+        # যাকে ক্রেডিট দেওয়ার কথা সেই ইউজারই আমাদের সিস্টেমে নেই - স্প্যাম/ভুল subid,
+        # কোনো balance যোগ করা হবে না।
+        return jsonify({"status": "error", "message": "user_not_found"}), 404
+
+    is_new = db.record_cpalead_conversion(lead_id, user_id, offer_id, campaign_name, payout)
+    if not is_new:
+        # আগেই প্রসেস হয়ে গেছে - দ্বিতীয়বার টাকা যোগ হবে না, কিন্তু CPAlead-কে 2xx-ই
+        # পাঠানো হচ্ছে যাতে ওরা এটাকে ব্যর্থ ধরে বারবার রিট্রাই না করে।
+        return jsonify({"status": "success", "duplicate": True})
+
+    db.add_balance(user_id, payout)
+    db.log_task_completion(user_id, f"cpalead_{offer_id}" if offer_id else "cpalead", payout)
+    distribute_referral_commission(user_id, payout)
+
+    return jsonify({"status": "success", "duplicate": False})
+
+
 @app.route("/api/referral", methods=["GET"])
 def referral_info():
     auth_user = get_authed_user()

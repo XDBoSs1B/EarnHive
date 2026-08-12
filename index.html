@@ -161,6 +161,36 @@
   .task-btn:disabled{ background:rgba(255,255,255,0.08); color:var(--text-low); box-shadow:none; }
   .task-btn.done{ background:rgba(255,255,255,0.06); color:var(--accent-cyan); box-shadow:none; }
 
+  /* ---------- CPAlead offer cards ---------- */
+  .offer-category-title{
+    display:flex; align-items:center; gap:8px; margin:22px 0 10px; font-weight:800; font-size:14px;
+  }
+  .offer-category-title .badge{
+    font-size:10px; font-weight:800; padding:3px 9px; border-radius:999px; text-transform:uppercase;
+  }
+  .offer-category-title.easy .badge{ background:rgba(74,222,128,0.18); color:var(--success); }
+  .offer-category-title.premium .badge{ background:rgba(255,179,122,0.18); color:var(--accent-gold); }
+  .offer-card{
+    display:flex; flex-direction:column; gap:8px;
+    background:rgba(255,255,255,0.04); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.08);
+    border-radius:var(--radius-md); padding:15px; margin-bottom:10px;
+  }
+  .offer-card-top{ display:flex; align-items:flex-start; gap:12px; }
+  .offer-card-info{ flex:1; min-width:0; }
+  .offer-title{ font-weight:700; font-size:14px; }
+  .offer-desc{ font-size:12px; color:var(--text-mid); margin-top:2px; line-height:1.4; }
+  .offer-reward{ font-size:13px; color:var(--accent-gold); font-weight:800; white-space:nowrap; }
+  .offer-eligibility{
+    font-size:11px; color:var(--text-low); display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+  }
+  .offer-eligibility span{ background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:999px; }
+  .offer-start-btn{
+    border:none; padding:11px 18px; border-radius:12px; font-weight:800; font-size:12.5px;
+    background:linear-gradient(135deg, var(--accent-cyan), var(--accent-gold-soft)); color:#1a0e08; cursor:pointer;
+    box-shadow:0 8px 20px rgba(255,122,84,0.3); width:100%; margin-top:2px;
+  }
+  .offer-empty{ font-size:12.5px; color:var(--text-low); text-align:center; padding:14px 0; }
+
   /* ---------- Referral / Hive tree ---------- */
   .link-box{
     background:var(--bg-2); border:1px dashed rgba(255,255,255,0.15); border-radius:var(--radius-md);
@@ -379,6 +409,16 @@
   <div class="page" id="page-tasks">
     <h2 class="display" data-i="tasks_title" style="margin-bottom:16px;">Earn Tasks</h2>
     <div id="taskList"></div>
+
+    <div class="offer-category-title easy" id="easyTasksTitle" style="display:none;">
+      <span data-i="easy_tasks">Easy Tasks</span><span class="badge">EASY</span>
+    </div>
+    <div id="easyTasksList"></div>
+
+    <div class="offer-category-title premium" id="premiumTasksTitle" style="display:none;">
+      <span data-i="premium_tasks">Premium Tasks</span><span class="badge">PREMIUM</span>
+    </div>
+    <div id="premiumTasksList"></div>
   </div>
 
   <!-- ================= TEAM / REFERRAL PAGE ================= -->
@@ -511,6 +551,8 @@ const I18N = {
     daily_limit_reached:"Daily ad limit reached — come back tomorrow",
     task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait",
     gate_title:"Join Our Channel", gate_desc:"You must join our official channel first to use EarnHive and start earning.",
+    easy_tasks:"Easy Tasks", premium_tasks:"Premium Tasks", offer_start:"Start",
+    offer_no_country:"Not available in your country/device right now", offer_reward_auto:"Reward added automatically after verified completion",
   },
   bn: {
     your_balance:"আপনার ব্যালেন্স", team_l1:"টিম L1", team_l2:"টিম L2", team_l3:"টিম L3",
@@ -535,6 +577,8 @@ const I18N = {
     daily_limit_reached:"আজকের অ্যাড লিমিট শেষ — কাল আবার আসুন",
     task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন",
     gate_title:"আমাদের চ্যানেলে জয়েন করুন", gate_desc:"EarnHive ব্যবহার করে আয় শুরু করতে হলে আগে আমাদের অফিসিয়াল চ্যানেলে জয়েন করতে হবে।",
+    easy_tasks:"সহজ টাস্ক", premium_tasks:"প্রিমিয়াম টাস্ক", offer_start:"শুরু করুন",
+    offer_no_country:"আপনার দেশ/ডিভাইসের জন্য এখন এটা উপলব্ধ নেই", offer_reward_auto:"টাস্ক ভেরিফাই হলে রিওয়ার্ড অটোমেটিক যোগ হবে",
   },
   ar: {
     your_balance:"رصيدك", team_l1:"الفريق ١", team_l2:"الفريق ٢", team_l3:"الفريق ٣",
@@ -559,6 +603,8 @@ const I18N = {
     daily_limit_reached:"تم الوصول للحد اليومي — عد غدًا",
     task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر",
     gate_title:"انضم إلى قناتنا", gate_desc:"يجب عليك الانضمام إلى قناتنا الرسمية أولاً لاستخدام EarnHive والبدء في الربح.",
+    easy_tasks:"مهام سهلة", premium_tasks:"مهام مميزة", offer_start:"ابدأ",
+    offer_no_country:"غير متاح في بلدك/جهازك الآن", offer_reward_auto:"تتم إضافة المكافأة تلقائيًا بعد التحقق من الإكمال",
   }
 };
 let currentLang = "en";
@@ -755,8 +801,85 @@ async function loadAppData(){
     renderReferralBreakdown();
 
     renderAll();
+    loadCpaleadOffers(); // ব্যাকগ্রাউন্ডে - ব্যর্থ হলেও বাকি অ্যাপ কাজ করবে
   } catch(e){
     showToast("Connection error");
+  }
+}
+
+/* ======================================================
+   CPALEAD OFFERS
+   এই কলটা ইচ্ছাকৃতভাবে ইউজারের নিজের ডিভাইস/ব্রাউজার থেকে সরাসরি CPAlead-কে করা হয়
+   (আমাদের ব্যাকএন্ড থেকে না), যাতে country=user ও device=user প্যারামিটার দিয়ে
+   CPAlead সত্যিকারের ইউজার IP ও User-Agent দেখে সঠিক দেশ/ডিভাইস অনুযায়ী অফার দেয়।
+   ====================================================== */
+function offerCardHTML(offer){
+  const countries = (offer.countries || []).slice(0, 4).join(", ") + ((offer.countries||[]).length > 4 ? "+" : "");
+  const device = (offer.device || "all").toUpperCase();
+  const desc = offer.description || offer.conversion || "";
+  return `
+    <div class="offer-card">
+      <div class="offer-card-top">
+        <div class="offer-card-info">
+          <div class="offer-title">${escapeHTML(offer.title || "")}</div>
+          <div class="offer-desc">${escapeHTML(desc)}</div>
+        </div>
+        <div class="offer-reward">+$${Number(offer.amount || 0).toFixed(2)}</div>
+      </div>
+      <div class="offer-eligibility">
+        <span>🌍 ${escapeHTML(countries || "—")}</span>
+        <span>📱 ${escapeHTML(device)}</span>
+      </div>
+      <button class="offer-start-btn" data-offer-link="${escapeHTML(offer.link || "")}">${tr("offer_start")}</button>
+    </div>`;
+}
+
+function escapeHTML(str){
+  const d = document.createElement("div");
+  d.textContent = str == null ? "" : String(str);
+  return d.innerHTML;
+}
+
+function renderOfferList(containerId, titleId, offers){
+  const container = document.getElementById(containerId);
+  const title = document.getElementById(titleId);
+  if(!offers || offers.length === 0){
+    container.innerHTML = "";
+    title.style.display = "none";
+    return;
+  }
+  title.style.display = "flex";
+  container.innerHTML = offers.map(offerCardHTML).join("");
+  container.querySelectorAll(".offer-start-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const link = btn.getAttribute("data-offer-link");
+      if(!link) return;
+      if(tg && tg.openLink) tg.openLink(link); else window.open(link, "_blank");
+    });
+  });
+}
+
+async function loadCpaleadOffers(){
+  try{
+    const cfg = await apiGet("/api/cpalead/config");
+    if(!cfg || !cfg.enabled) return; // publisher_id সেট না থাকলে চুপচাপ কিছু দেখাবে না
+
+    const url = `https://www.cpalead.com/api/offers?id=${encodeURIComponent(cfg.publisher_id)}`
+      + `&country=user&device=user&subid=${encodeURIComponent(cfg.subid)}`
+      + `&fields=id,title,description,conversion,device,link,amount,countries,payout_type`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+    const offers = (data && data.offers) || [];
+
+    const threshold = cfg.easy_max_reward != null ? cfg.easy_max_reward : 0.5;
+    const easy = offers.filter(o => Number(o.amount || 0) < threshold);
+    const premium = offers.filter(o => Number(o.amount || 0) >= threshold);
+
+    renderOfferList("easyTasksList", "easyTasksTitle", easy);
+    renderOfferList("premiumTasksList", "premiumTasksTitle", premium);
+  } catch(e){
+    // CPAlead আনরিচেবল হলেও বাকি অ্যাপ স্বাভাবিকভাবে কাজ করবে
   }
 }
 

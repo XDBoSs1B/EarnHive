@@ -68,6 +68,20 @@ def init_db():
         )
     """)
 
+    # CPAlead থেকে আসা conversion (postback) গুলোর রেকর্ড - lead_id UNIQUE রাখা হয়েছে
+    # যাতে CPAlead একই postback রিট্রাই/ডুপ্লিকেট পাঠালেও দ্বিতীয়বার টাকা যোগ না হয়।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS cpalead_conversions (
+            id SERIAL PRIMARY KEY,
+            lead_id TEXT UNIQUE NOT NULL,
+            user_id BIGINT,
+            offer_id TEXT,
+            campaign_name TEXT,
+            payout DOUBLE PRECISION,
+            created_at TEXT
+        )
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -337,3 +351,26 @@ def get_withdrawal(withdrawal_id):
     cur.close()
     conn.close()
     return row
+
+
+# ---------- CPALEAD CONVERSIONS ----------
+
+def record_cpalead_conversion(lead_id, user_id, offer_id, campaign_name, payout):
+    """
+    CPAlead postback থেকে আসা conversion স্টোর করার চেষ্টা করে।
+    lead_id UNIQUE কলাম হওয়ায়, একই lead_id দ্বিতীয়বার এলে insert হবে না (ON CONFLICT DO NOTHING)।
+    Return: True মানে এটা নতুন/প্রথমবার (balance যোগ করা উচিত),
+            False মানে এটা আগেই প্রসেস হয়ে গেছে (duplicate - balance যোগ করা যাবে না)।
+    """
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO cpalead_conversions (lead_id, user_id, offer_id, campaign_name, payout, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (lead_id) DO NOTHING",
+        (lead_id, user_id, offer_id, campaign_name, payout, datetime.utcnow().isoformat())
+    )
+    inserted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return inserted

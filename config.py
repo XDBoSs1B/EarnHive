@@ -51,3 +51,19 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 # --- সাপোর্টেড ভাষা ---
 LANGUAGES = ["bn", "en", "ar"]
 DEFAULT_LANGUAGE = "en"
+
+# =========================================
+# CPAlead অফার ইন্টিগ্রেশন
+# =========================================
+# আপনার CPAlead Publisher ID (dashboard-এর টপে/Tools > API-তে পাবেন)
+CPALEAD_PUBLISHER_ID = os.environ.get("CPALEAD_PUBLISHER_ID", "").strip()
+
+# Postback ভেরিফাই করার সিক্রেট পাসওয়ার্ড - এটা নিজে একটা র‍্যান্ডম স্ট্রিং বসান,
+# আর CPAlead dashboard-এর Postback URL-এও ঠিক এটাই &password= এ বসাতে হবে।
+# ⚠️ bot token-এর মতোই এটাও Render-এর Environment Variables-এ রাখা ভালো, কোডে না।
+CPALEAD_POSTBACK_PASSWORD = os.environ.get("CPALEAD_POSTBACK_PASSWORD", "").strip()
+
+# Easy vs Premium ক্যাটাগরি ভাগ করার থ্রেশহোল্ড (এটা CPAlead-এর নিজস্ব ফিল্ড না -
+# এটা শুধু আমাদের অ্যাপের নিজস্ব লজিক, offer-এর "amount" এই মান থেকে কম হলে Easy,
+# বেশি/সমান হলে Premium ধরা হবে)
+CPALEAD_EASY_MAX_REWARD = 0.50
