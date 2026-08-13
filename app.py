@@ -111,6 +111,7 @@ def auth():
 
     l1, l2 = db.get_referral_counts(user_id)
     joined_channel = require_channel_member(user_id)
+    today_count, today_earned = db.get_today_summary(user_id)
 
     return jsonify({
         "user_id": existing["user_id"],
@@ -120,6 +121,7 @@ def auth():
         "total_earned": existing["total_earned"],
         "referrals": {"level1": l1, "level2": l2},
         "joined_channel": joined_channel,
+        "today": {"tasks_count": today_count, "earned": today_earned},
         "config": {
             "referral_rates": [config.REFERRAL_LEVEL_1, config.REFERRAL_LEVEL_2],
             "min_withdraw_bkash": config.MIN_WITHDRAW_BKASH,
@@ -289,6 +291,7 @@ def cpalead_config():
         "publisher_id": config.CPALEAD_PUBLISHER_ID,
         "subid": str(user_id),
         "easy_max_reward": config.CPALEAD_EASY_MAX_REWARD,
+        "user_share_percent": config.CPALEAD_USER_SHARE_PERCENT,
     })
 
 
@@ -341,11 +344,57 @@ def cpalead_postback():
         # পাঠানো হচ্ছে যাতে ওরা এটাকে ব্যর্থ ধরে বারবার রিট্রাই না করে।
         return jsonify({"status": "success", "duplicate": True})
 
-    db.add_balance(user_id, payout)
-    db.log_task_completion(user_id, f"cpalead_{offer_id}" if offer_id else "cpalead", payout)
-    distribute_referral_commission(user_id, payout)
+    # CPAlead যে পুরো payout পাঠিয়েছে, তার একটা অংশই ইউজারকে দেওয়া হয় (config.py-তে
+    # CPALEAD_USER_SHARE_PERCENT দিয়ে ঠিক করা) - পুরো payout এমনিতেই আপনার নিজের
+    # CPAlead অ্যাকাউন্টে জমা হয়ে যায়, এটা শুধু অ্যাপের ভেতরের ভাগ ঠিক করে।
+    user_share = payout * (config.CPALEAD_USER_SHARE_PERCENT / 100)
+
+    db.add_balance(user_id, user_share)
+    db.log_task_completion(user_id, f"cpalead_{offer_id}" if offer_id else "cpalead", user_share)
+    distribute_referral_commission(user_id, user_share)
 
     return jsonify({"status": "success", "duplicate": False})
+
+
+@app.route("/api/cpalead/track_start", methods=["POST"])
+def cpalead_track_start():
+    """
+    ইউজার কোনো CPAlead offer-এ 'Start' চাপলে ফ্রন্টএন্ড এটা কল করে - এখান থেকেই
+    Tasks পেজে 'Pending' লিস্ট তৈরি হয়, যতক্ষণ না postback দিয়ে verify হয়।
+    """
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
+
+    body = request.get_json(silent=True) or {}
+    offer_id = str(body.get("offer_id", "")).strip()
+    title = str(body.get("title", "")).strip()[:200]
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        amount = 0.0
+
+    if not offer_id:
+        return jsonify({"error": "missing_offer_id"}), 400
+
+    db.record_cpalead_start(user_id, offer_id, title, amount)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/cpalead/pending", methods=["GET"])
+def cpalead_pending():
+    """ইউজার যেসব CPAlead offer শুরু করেছে কিন্তু এখনো verify হয়নি, তার তালিকা।"""
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    pending = db.get_pending_cpalead(user_id)
+    return jsonify({"pending": pending})
 
 
 @app.route("/api/referral", methods=["GET"])

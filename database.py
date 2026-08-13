@@ -7,7 +7,7 @@ Supabase একটা আলাদা, স্থায়ী ডাটাবে�
 """
 import psycopg2
 import psycopg2.extras
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import DATABASE_URL
 
 
@@ -79,6 +79,19 @@ def init_db():
             campaign_name TEXT,
             payout DOUBLE PRECISION,
             created_at TEXT
+        )
+    """)
+
+    # ইউজার কোন CPAlead offer-এ "Start" চাপলো তার রেকর্ড - postback (verify) আসার আগ পর্যন্ত
+    # "Pending" হিসেবে দেখানোর জন্য।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS cpalead_started (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            offer_id TEXT,
+            title TEXT,
+            amount DOUBLE PRECISION,
+            started_at TEXT
         )
     """)
 
@@ -277,6 +290,23 @@ def get_task_completion_count_today(user_id, task_type):
     return row["cnt"] if row else 0
 
 
+def get_today_summary(user_id):
+    """আজকে (UTC তারিখ অনুযায়ী) ইউজার মোট কতগুলো টাস্ক করেছে আর কত ডলার আয় করেছে -
+    Home পেজে 'আজকের আয়' আর 'আজকের টাস্ক' বক্স দেখানোর জন্য।"""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    today = datetime.utcnow().date().isoformat()
+    cur.execute(
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(reward), 0) as total "
+        "FROM task_completions WHERE user_id=%s AND completed_at LIKE %s",
+        (user_id, f"{today}%")
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return (row["cnt"] if row else 0), round(row["total"], 4) if row else 0.0
+
+
 def get_task_completion_count_ever(user_id, task_type):
     """এই টাস্কটা জীবনে মোট কতবার সম্পন্ন হয়েছে"""
     conn = get_conn()
@@ -374,3 +404,44 @@ def record_cpalead_conversion(lead_id, user_id, offer_id, campaign_name, payout)
     cur.close()
     conn.close()
     return inserted
+
+
+def record_cpalead_start(user_id, offer_id, title, amount):
+    """ইউজার একটা CPAlead offer-এ 'Start' চাপলে এটা রেকর্ড হয় - এখান থেকেই 'Pending' লিস্ট তৈরি হয়।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO cpalead_started (user_id, offer_id, title, amount, started_at) VALUES (%s, %s, %s, %s, %s)",
+        (user_id, offer_id, title, amount, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_pending_cpalead(user_id):
+    """
+    ইউজার যেসব CPAlead offer 'Start' করেছে কিন্তু এখনো postback দিয়ে verify হয়নি,
+    তাদের তালিকা ফেরত দেয় (Tasks পেজে 'Pending' হিসেবে দেখানোর জন্য)।
+    ৭ দিনের বেশি পুরনো (কখনো verify হয়নি এমন) এন্ট্রি আর দেখানো হয় না - ধরে নেওয়া হয়
+    ইউজার শেষ পর্যন্ত করেনি।
+    """
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
+    cur.execute("""
+        SELECT s.offer_id, s.title, s.amount, s.started_at
+        FROM cpalead_started s
+        WHERE s.user_id = %s AND s.started_at >= %s
+        AND NOT EXISTS (
+            SELECT 1 FROM cpalead_conversions c
+            WHERE c.user_id = s.user_id AND c.offer_id = s.offer_id AND c.created_at >= s.started_at
+        )
+        ORDER BY s.started_at DESC
+        LIMIT 20
+    """, (user_id, cutoff))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in rows]
+
