@@ -881,7 +881,7 @@ function offerCardHTML(offer){
           ${instructions ? `<div class="offer-conversion">✅ ${escapeHTML(instructions)}</div>` : ""}
           ${desc ? `<div class="offer-desc">${escapeHTML(desc)}</div>` : ""}
         </div>
-        <div class="offer-reward">+$${Number(offer.amount || 0).toFixed(2)}</div>
+        <div class="offer-reward">+$${Number(offer.amount || 0).toFixed(4)}</div>
       </div>
       <div class="offer-eligibility">
         <span>🌍 ${escapeHTML(countries || "—")}</span>
@@ -948,6 +948,11 @@ async function loadCpaleadOffers(){
     offers = offers.map(o => ({...o, amount: Number(o.amount || 0) * (sharePercent / 100)}));
 
     const threshold = cfg.easy_max_reward != null ? cfg.easy_max_reward : 0.5;
+    // যে offer-এর reward আমাদের ভাগ কেটে নেওয়ার পর প্রায় শূন্য হয়ে যায় (যেমন CPAlead-এর
+    // এখনো সক্রিয় না হওয়া/placeholder অফার), সেগুলো ইউজারকে দেখানো হবে না -
+    // "+$0.0000" রিওয়ার্ডের কোনো কাজ দেখানো অন্যায্য।
+    offers = offers.filter(o => o.amount >= 0.0001);
+
     const easy = offers.filter(o => o.amount < threshold);
     const premium = offers.filter(o => o.amount >= threshold);
 
