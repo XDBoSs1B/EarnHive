@@ -423,12 +423,13 @@ def get_pending_cpalead(user_id):
     """
     ইউজার যেসব CPAlead offer 'Start' করেছে কিন্তু এখনো postback দিয়ে verify হয়নি,
     তাদের তালিকা ফেরত দেয় (Tasks পেজে 'Pending' হিসেবে দেখানোর জন্য)।
-    ৭ দিনের বেশি পুরনো (কখনো verify হয়নি এমন) এন্ট্রি আর দেখানো হয় না - ধরে নেওয়া হয়
-    ইউজার শেষ পর্যন্ত করেনি।
+    ৩ দিনের বেশি পুরনো এন্ট্রি আর 'Pending' তালিকায় দেখানো হয় না (তালিকা পরিষ্কার
+    রাখার জন্য) - কিন্তু এর পরেও যদি CPAlead postback পাঠায়, balance ঠিকই যোগ হবে,
+    এই cutoff শুধু UI-তে কতদিন 'Pending' দেখাবে সেটা নিয়ন্ত্রণ করে।
     """
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
+    cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
     cur.execute("""
         SELECT s.offer_id, s.title, s.amount, s.started_at
         FROM cpalead_started s
