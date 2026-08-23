@@ -262,6 +262,373 @@ def claim_task(task_id):
     })
 
 
+# =====================================================================
+# LINK LOCKER — নিজের বানানো ২-ধাপের বিজ্ঞাপন পেজ
+# ফ্লো: বটে Start চাপা -> token তৈরি -> /l/<task_id>?t=token (পেজ ১, ১৫সে + বিজ্ঞাপন)
+#      -> Go বাটন -> /l/<task_id>/step2?t=token (পেজ ২, ১৫সে + বিজ্ঞাপন)
+#      -> Get Link বাটন -> সার্ভার token verify করে reward দেয় -> আসল লিংকে redirect
+# এই পুরো ফ্লো Telegram-এর বাইরে (আলাদা ব্রাউজারে) হয়, তাই Telegram initData পাওয়া
+# যায় না - token-ই একমাত্র প্রমাণ যে এটা কোন ইউজারের জন্য গণ্য হবে।
+# =====================================================================
+
+def _linklocker_page_html(title, wait_seconds, next_url, button_text, is_final=False):
+    """
+    Link Locker-এর একটা ধাপের (step) HTML পেজ বানায় - কাউন্টডাউন + বিজ্ঞাপনের
+    placeholder জায়গা + ওয়েট শেষে বাটন। Adsterra (বা অন্য) বিজ্ঞাপন কোড পেলে
+    নিচের AD_SLOT_1 / AD_SLOT_2 কমেন্টের জায়গায় বসিয়ে দিলেই চলবে।
+    """
+    button_action = (
+        f"completeAndRedirect('{next_url}')" if is_final
+        else f"window.location.href='{next_url}'"
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+  body{{ background:#0d0f1c; color:#fff; font-family:sans-serif; text-align:center;
+        margin:0; padding:24px 16px; min-height:100vh; box-sizing:border-box; }}
+  h2{{ margin-top:10px; }}
+  .ad-slot{{ background:rgba(255,255,255,0.06); border:1px dashed rgba(255,255,255,0.2);
+             border-radius:12px; padding:40px 12px; margin:20px auto; max-width:420px;
+             color:rgba(255,255,255,0.4); font-size:13px; }}
+  .timer{{ font-size:42px; font-weight:800; margin:20px 0; color:#ff7a54; }}
+  .go-btn{{ display:none; background:linear-gradient(135deg,#4dd8e6,#ffb37a); color:#1a0e08;
+            border:none; padding:16px 40px; border-radius:14px; font-weight:800;
+            font-size:16px; cursor:pointer; }}
+  .go-btn.show{{ display:inline-block; }}
+</style>
+</head>
+<body>
+  <h2>⏳ Please wait...</h2>
+
+  <!-- AD_SLOT_1: এখানে Adsterra/অন্য নেটওয়ার্কের বিজ্ঞাপন কোড বসবে -->
+  <div class="ad-slot">Ad Space 1</div>
+
+  <div class="timer" id="countdown">{wait_seconds}</div>
+
+  <!-- AD_SLOT_2: এখানেও আরেকটা বিজ্ঞাপন কোড বসানো যাবে -->
+  <div class="ad-slot">Ad Space 2</div>
+
+  <button class="go-btn" id="goBtn">{button_text}</button>
+
+  <script>
+    let remaining = {wait_seconds};
+    const el = document.getElementById("countdown");
+    const btn = document.getElementById("goBtn");
+    const timer = setInterval(()=>{{
+      remaining -= 1;
+      el.textContent = remaining;
+      if(remaining <= 0){{
+        clearInterval(timer);
+        el.style.display = "none";
+        btn.classList.add("show");
+      }}
+    }}, 1000);
+
+    btn.addEventListener("click", ()=>{{
+      btn.disabled = true;
+      btn.textContent = "...";
+      {button_action}
+    }});
+
+    async function completeAndRedirect(tokenParam){{
+      try{{
+        const res = await fetch(tokenParam);
+        const data = await res.json();
+        if(data.ok){{
+          window.location.href = data.destination;
+        }} else {{
+          document.body.innerHTML = "<h2>এই লিংকটি ব্যবহার করা হয়ে গেছে বা মেয়াদ শেষ।</h2>";
+        }}
+      }} catch(e){{
+        document.body.innerHTML = "<h2>একটা সমস্যা হয়েছে, আবার চেষ্টা করুন।</h2>";
+      }}
+    }}
+  </script>
+</body>
+</html>"""
+
+
+@app.route("/api/linktask/<task_id>/start", methods=["POST"])
+def linktask_start(task_id):
+    """বটের ভেতর থেকে Link Locker টাস্কে 'Start' চাপলে এটা কল হয় - একটা টোকেন
+    তৈরি করে দেয়, যেটা দিয়ে বাইরের বিজ্ঞাপন-পেজের লিংক বানানো হবে।"""
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
+
+    task = tasks_config.get_task_by_id(task_id)
+    if not task or not task.get("enabled", True) or task.get("action_type") != "link_locker":
+        return jsonify({"error": "task_not_found"}), 404
+
+    if task["limit_type"] == "daily":
+        done_count = db.get_task_completion_count_today(user_id, task_id)
+    else:
+        done_count = db.get_task_completion_count_ever(user_id, task_id)
+    if done_count >= task["limit_count"]:
+        return jsonify({"error": "daily_limit_reached"}), 400
+
+    token = db.create_link_token(user_id, task_id)
+    url = f"{config.MINI_APP_BACKEND_URL}/l/{task_id}?t={token}"
+    return jsonify({"ok": True, "url": url})
+
+
+@app.route("/l/<task_id>", methods=["GET"])
+def linklocker_step1(task_id):
+    """Link Locker-এর প্রথম পেজ - Telegram-এর বাইরে সাধারণ ব্রাউজারে খোলে।"""
+    token = request.args.get("t", "")
+    row = db.get_link_token(token)
+    if not row or row["task_id"] != task_id or row["used"]:
+        return "<h2 style='color:#fff;background:#0d0f1c;padding:40px;font-family:sans-serif;'>এই লিংকটি অবৈধ বা মেয়াদোত্তীর্ণ।</h2>", 400
+
+    next_url = f"/l/{task_id}/step2?t={token}"
+    html = _linklocker_page_html("Step 1", 15, next_url, "Go →", is_final=False)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/l/<task_id>/step2", methods=["GET"])
+def linklocker_step2(task_id):
+    """Link Locker-এর দ্বিতীয়/শেষ পেজ - এই পেজের বাটনেই reward credit হয় এবং
+    আসল destination লিংকে redirect করা হয়।"""
+    token = request.args.get("t", "")
+    row = db.get_link_token(token)
+    if not row or row["task_id"] != task_id or row["used"]:
+        return "<h2 style='color:#fff;background:#0d0f1c;padding:40px;font-family:sans-serif;'>এই লিংকটি অবৈধ বা মেয়াদোত্তীর্ণ।</h2>", 400
+
+    complete_url = f"/api/linktask/complete?t={token}"
+    html = _linklocker_page_html("Step 2", 15, complete_url, "Get Link", is_final=True)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/api/linktask/complete", methods=["GET"])
+def linktask_complete():
+    """
+    Link Locker-এর শেষ পেজের বাটন এটা কল করে - token verify করে, দৈনিক লিমিট চেক
+    করে, তারপরই reward যোগ করে আর আসল destination URL ফেরত দেয় (redirect করার জন্য)।
+    """
+    token = request.args.get("t", "")
+    row = db.get_link_token(token)
+    if not row or row["used"]:
+        return jsonify({"ok": False, "error": "invalid_token"}), 400
+
+    # ৩০ মিনিটের বেশি পুরনো টোকেন গ্রহণযোগ্য না (কেউ লিংক সংরক্ষণ করে অনেক পরে
+    # ব্যবহার করার চেষ্টা করলে সেটা ঠেকানোর জন্য)
+    created = datetime.fromisoformat(row["created_at"])
+    if (datetime.utcnow() - created).total_seconds() > 1800:
+        return jsonify({"ok": False, "error": "token_expired"}), 400
+
+    task_id = row["task_id"]
+    user_id = row["user_id"]
+    task = tasks_config.get_task_by_id(task_id)
+    if not task or task.get("action_type") != "link_locker":
+        return jsonify({"ok": False, "error": "task_not_found"}), 404
+
+    if task["limit_type"] == "daily":
+        done_count = db.get_task_completion_count_today(user_id, task_id)
+    else:
+        done_count = db.get_task_completion_count_ever(user_id, task_id)
+    if done_count >= task["limit_count"]:
+        return jsonify({"ok": False, "error": "daily_limit_reached"}), 400
+
+    if not require_channel_member(user_id):
+        return jsonify({"ok": False, "error": "channel_not_joined"}), 403
+
+    reward = task["reward"]
+    db.add_balance(user_id, reward)
+    db.log_task_completion(user_id, task_id, reward)
+    distribute_referral_commission(user_id, reward)
+    db.mark_link_token_used(token)
+
+    return jsonify({"ok": True, "destination": task["destination_url"]})
+
+
+# =====================================================================
+# URL SHORTENER ("৫ নম্বর ঘর")
+# ইউজার নিজের লিংক শর্ট করে, যে কেউ (Telegram ছাড়াই, যেকোনো ব্রাউজার থেকে) সেটাতে
+# ক্লিক করলে ৩-ধাপের বিজ্ঞাপন পেজ দেখে, শেষে আসল লিংকে পৌঁছায় - আর যে বানিয়েছিল
+# তার balance-এ reward যোগ হয় (একই IP ২৪ ঘণ্টায় দ্বিতীয়বার গণনা হয় না)।
+# =====================================================================
+
+def get_client_ip():
+    """Render-এর মতো প্রক্সির পেছনে থাকলে real client IP আনার জন্য।"""
+    fwd = request.headers.get("X-Forwarded-For", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+@app.route("/api/shortlink/create", methods=["POST"])
+def shortlink_create():
+    """বটের Shortener পেজ থেকে নতুন লিংক তৈরি করার জন্য।"""
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
+
+    body = request.get_json(silent=True) or {}
+    destination_url = str(body.get("destination_url", "")).strip()
+
+    if not destination_url or not (destination_url.startswith("http://") or destination_url.startswith("https://")):
+        return jsonify({"error": "invalid_url"}), 400
+    if len(destination_url) > 2000:
+        return jsonify({"error": "url_too_long"}), 400
+
+    code = db.create_short_link(user_id, destination_url)
+    short_url = f"{config.MINI_APP_BACKEND_URL}/s/{code}"
+    return jsonify({"ok": True, "code": code, "short_url": short_url})
+
+
+@app.route("/api/shortlink/list", methods=["GET"])
+def shortlink_list():
+    """ইউজারের তৈরি করা সব লিংক + সারাংশ (মোট লিংক/view/আয়) ফেরত দেয়।"""
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    links = db.get_user_short_links(user_id)
+    total_views = sum(l["views"] for l in links)
+    total_earned = sum(l["total_reward"] for l in links)
+
+    for l in links:
+        l["short_url"] = f"{config.MINI_APP_BACKEND_URL}/s/{l['code']}"
+
+    return jsonify({
+        "links": links,
+        "summary": {
+            "total_links": len(links),
+            "total_views": total_views,
+            "total_earned": round(total_earned, 4),
+        }
+    })
+
+
+def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, button_text, is_final=False):
+    """৩-ধাপের বিজ্ঞাপন পেজের একটা ধাপ - Adsterra কোড এখনো বসানো হয়নি বলে
+    'Ad Space' লেখা placeholder box দেখাচ্ছে।"""
+    action_js = f"completeAndRedirect('{next_action}')" if is_final else f"window.location.href='{next_action}'"
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EarnHive Link</title>
+<style>
+  body{{ background:#0a0c1c; color:#fff; font-family:sans-serif; text-align:center;
+        margin:0; padding:24px 16px; min-height:100vh; box-sizing:border-box; }}
+  .step-label{{ font-size:12px; color:rgba(255,255,255,0.4); text-transform:uppercase;
+                letter-spacing:0.06em; margin-bottom:6px; }}
+  h2{{ margin-top:4px; }}
+  .ad-slot{{ background:rgba(255,255,255,0.06); border:1px dashed rgba(255,255,255,0.2);
+             border-radius:12px; padding:40px 12px; margin:16px auto; max-width:420px;
+             color:rgba(255,255,255,0.4); font-size:13px; }}
+  .timer{{ font-size:42px; font-weight:800; margin:16px 0; color:#ffb37a; }}
+  .go-btn{{ display:none; background:linear-gradient(135deg,#4dd8e6,#ffb37a); color:#1a0e08;
+            border:none; padding:16px 40px; border-radius:14px; font-weight:800;
+            font-size:16px; cursor:pointer; }}
+  .go-btn.show{{ display:inline-block; }}
+</style>
+</head>
+<body>
+  <div class="step-label">STEP {step} / {total_steps}</div>
+  <h2>⏳ Please wait...</h2>
+  <div class="ad-slot">Ad Space 1</div>
+  <div class="timer" id="countdown">{wait_seconds}</div>
+  <div class="ad-slot">Ad Space 2</div>
+  <button class="go-btn" id="goBtn">{button_text}</button>
+  <script>
+    let remaining = {wait_seconds};
+    const el = document.getElementById("countdown");
+    const btn = document.getElementById("goBtn");
+    const timer = setInterval(()=>{{
+      remaining -= 1;
+      el.textContent = remaining;
+      if(remaining <= 0){{
+        clearInterval(timer);
+        el.style.display = "none";
+        btn.classList.add("show");
+      }}
+    }}, 1000);
+    btn.addEventListener("click", ()=>{{
+      btn.disabled = true;
+      btn.textContent = "...";
+      {action_js}
+    }});
+    async function completeAndRedirect(url){{
+      try{{
+        const res = await fetch(url);
+        const data = await res.json();
+        if(data.ok){{
+          window.location.href = data.destination;
+        }} else {{
+          document.body.innerHTML = "<h2>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>";
+        }}
+      }} catch(e){{
+        document.body.innerHTML = "<h2>একটা সমস্যা হয়েছে, আবার চেষ্টা করুন।</h2>";
+      }}
+    }}
+  </script>
+</body>
+</html>"""
+
+
+@app.route("/s/<code>", methods=["GET"])
+def shortlink_step1(code):
+    link = db.get_short_link(code)
+    if not link:
+        return "<h2 style='color:#fff;background:#0a0c1c;padding:40px;font-family:sans-serif;'>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>", 404
+    html = _shortlink_step_html(1, 3, code, 15, f"/s/{code}/step2", "Go →")
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/s/<code>/step2", methods=["GET"])
+def shortlink_step2(code):
+    link = db.get_short_link(code)
+    if not link:
+        return "<h2 style='color:#fff;background:#0a0c1c;padding:40px;font-family:sans-serif;'>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>", 404
+    html = _shortlink_step_html(2, 3, code, 15, f"/s/{code}/step3", "Go →")
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/s/<code>/step3", methods=["GET"])
+def shortlink_step3(code):
+    link = db.get_short_link(code)
+    if not link:
+        return "<h2 style='color:#fff;background:#0a0c1c;padding:40px;font-family:sans-serif;'>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>", 404
+    html = _shortlink_step_html(3, 3, code, 15, f"/api/shortlink/view/{code}", "Get Link", is_final=True)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/api/shortlink/view/<code>", methods=["GET"])
+def shortlink_view_complete(code):
+    """
+    ৩-ধাপ শেষে এটা কল হয় - একই IP ২৪ ঘণ্টায় দ্বিতীয়বার হলে reward দেওয়া হয় না
+    (fraud protection), কিন্তু viewer তবুও ঠিকভাবে destination-এ পৌঁছাবে।
+    """
+    link = db.get_short_link(code)
+    if not link:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    ip = get_client_ip()
+    if not db.has_viewed_recently(code, ip):
+        reward = config.SHORTLINK_REWARD_PER_VIEW
+        db.record_short_link_view(code, ip, reward)
+        db.add_balance(link["user_id"], reward)
+        distribute_referral_commission(link["user_id"], reward)
+
+    return jsonify({"ok": True, "destination": link["destination_url"]})
+
+
 @app.route("/api/cpalead/config", methods=["GET"])
 def cpalead_config():
     """

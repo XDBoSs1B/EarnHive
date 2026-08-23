@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="offerwall-verification" content="6a8532d3588d28f78736fc34">
 <title>EarnHive</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -195,6 +196,20 @@
     box-shadow:0 8px 20px rgba(255,122,84,0.3); width:100%; margin-top:2px;
   }
   .offer-empty{ font-size:12.5px; color:var(--text-low); text-align:center; padding:14px 0; }
+
+  /* ---------- URL Shortener (৫ নম্বর ঘর) ---------- */
+  .sl-link-item{
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+    border-radius:14px; padding:14px; margin-bottom:10px;
+  }
+  .sl-link-url{ font-size:12.5px; color:var(--accent-cyan); word-break:break-all; margin-bottom:8px; }
+  .sl-link-stats{ display:flex; gap:16px; font-size:12px; color:var(--text-mid); }
+  .sl-link-stats b{ color:var(--text-hi); }
+  .sl-link-actions{ margin-top:10px; }
+  .sl-link-actions button{
+    width:100%; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+    color:var(--text-hi); padding:9px; border-radius:9px; font-size:12px; cursor:pointer;
+  }
   .offer-auto-note{ font-size:10.5px; color:var(--text-low); text-align:center; margin-top:6px; line-height:1.4; }
   .offer-conversion{ font-size:12px; color:var(--text-mid); font-weight:500; line-height:1.4; }
   .offer-desc{ font-size:11.5px; color:var(--text-low); margin-top:1px; line-height:1.4; }
@@ -547,6 +562,24 @@
     <p class="helper-text" data-i="processing_note">Payments are processed within 12–24 hours.</p>
   </div>
 
+  <!-- ================= URL SHORTENER PAGE (৫ নম্বর ঘর) ================= -->
+  <div class="page" id="page-shortener">
+    <h2 class="display" data-i="shortener_title" style="margin-bottom:16px;">Link Shortener</h2>
+
+    <div class="stat-row">
+      <div class="stat-chip"><div class="num" id="slTotalLinks">0</div><div class="label" data-i="sl_total_links">Total Links</div></div>
+      <div class="stat-chip"><div class="num" id="slTotalViews">0</div><div class="label" data-i="sl_total_views">Total Views</div></div>
+    </div>
+    <div class="stat-row" style="margin-top:10px;">
+      <div class="stat-chip"><div class="num" id="slTotalEarned">$0.0000</div><div class="label" data-i="sl_total_earned">Total Earned</div></div>
+    </div>
+
+    <input type="text" class="input-field" id="shortenerUrlInput" data-i-placeholder="sl_input_placeholder" placeholder="Paste your link here...">
+    <button class="submit-btn" id="shortenerCreateBtn" data-i="sl_create_btn">Create Link</button>
+
+    <div id="shortenerLinksList" style="margin-top:18px;"></div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
@@ -556,6 +589,7 @@
   <div class="nav-item" data-page="tasks"><div class="nav-icon">📋</div><span data-i="nav_tasks">Tasks</span></div>
   <div class="nav-item" data-page="team"><div class="nav-icon">🐝</div><span data-i="nav_team">Hive</span></div>
   <div class="nav-item" data-page="wallet"><div class="nav-icon">💸</div><span data-i="nav_wallet">Wallet</span></div>
+  <div class="nav-item" data-page="shortener"><div class="nav-icon">🔗</div><span data-i="nav_shortener">Links</span></div>
 </div>
 
 <script>
@@ -582,7 +616,11 @@ const I18N = {
     team_tree:"YOUR TEAM TREE 🌳", level1_short:"L1", level2_short:"L2", you:"You",
     wallet_title:"Withdraw", request_withdraw:"Request Withdrawal",
     processing_note:"Payments are processed within 12–24 hours.",
-    nav_home:"Home", nav_tasks:"Tasks", nav_team:"Hive", nav_wallet:"Wallet",
+    nav_home:"Home", nav_tasks:"Tasks", nav_team:"Hive", nav_wallet:"Wallet", nav_shortener:"Links",
+    shortener_title:"Link Shortener", sl_total_links:"Total Links", sl_total_views:"Total Views",
+    sl_total_earned:"Total Earned", sl_input_placeholder:"Paste your link here...", sl_create_btn:"Create Link",
+    sl_views_label:"Views", sl_earned_label:"Earned", sl_copy_btn:"Copy Link", sl_no_links:"You haven't created any links yet",
+    sl_invalid_url:"Please enter a valid link starting with http:// or https://",
     task_join:"Join Channel", task_ad:"Watch Ad",
     claim:"Claim", done:"Done", verify:"Verify",
     copied:"Link copied!", already_done:"Already completed today", not_joined:"You haven't joined yet",
@@ -590,7 +628,7 @@ const I18N = {
     available:"Available", enter_valid_amount:"Enter a valid amount", min_amount_is:"Minimum amount is", amount_exceeds_balance:"Amount exceeds your balance",
     today_label:"today", ad_not_ready:"Ad not ready yet, try again in a moment", ad_skipped:"Ad closed early — no reward",
     daily_limit_reached:"Daily ad limit reached — come back tomorrow",
-    task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait",
+    task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait", task_linklocker:"Sponsored Link",
     gate_title:"Join Our Channel", gate_desc:"You must join our official channel first to use EarnHive and start earning.",
     easy_tasks:"Easy Tasks", premium_tasks:"Premium Tasks", offer_start:"Start",
     offer_no_country:"Not available in your country/device right now", offer_reward_auto:"Tap Start, complete the steps on the offer page, reward is added automatically",
@@ -613,7 +651,11 @@ const I18N = {
     team_tree:"আপনার টিম ট্রি 🌳", level1_short:"লেভেল ১", level2_short:"লেভেল ২", you:"আপনি",
     wallet_title:"উইথড্র", request_withdraw:"উইথড্র রিকোয়েস্ট করুন",
     processing_note:"১২-২৪ ঘন্টার মধ্যে পেমেন্ট করা হবে।",
-    nav_home:"হোম", nav_tasks:"টাস্ক", nav_team:"হাইভ", nav_wallet:"ওয়ালেট",
+    nav_home:"হোম", nav_tasks:"টাস্ক", nav_team:"হাইভ", nav_wallet:"ওয়ালেট", nav_shortener:"লিংক",
+    shortener_title:"লিংক শর্টনার", sl_total_links:"মোট লিংক", sl_total_views:"মোট ভিউ",
+    sl_total_earned:"মোট আয়", sl_input_placeholder:"আপনার লিংক এখানে বসান...", sl_create_btn:"লিংক তৈরি করুন",
+    sl_views_label:"ভিউ", sl_earned_label:"আয়", sl_copy_btn:"লিংক কপি করুন", sl_no_links:"আপনি এখনো কোনো লিংক তৈরি করেননি",
+    sl_invalid_url:"http:// বা https:// দিয়ে শুরু হওয়া সঠিক লিংক দিন",
     task_join:"চ্যানেল জয়েন করুন", task_ad:"অ্যাড দেখুন",
     claim:"নিন", done:"সম্পন্ন", verify:"চেক করুন",
     copied:"লিংক কপি হয়েছে!", already_done:"আজকে ইতিমধ্যে সম্পন্ন হয়েছে", not_joined:"আপনি এখনো জয়েন করেননি",
@@ -621,7 +663,7 @@ const I18N = {
     available:"উপলব্ধ", enter_valid_amount:"সঠিক পরিমাণ লিখুন", min_amount_is:"সর্বনিম্ন পরিমাণ", amount_exceeds_balance:"পরিমাণ আপনার ব্যালেন্সের চেয়ে বেশি",
     today_label:"আজ", ad_not_ready:"অ্যাড এখনো রেডি হয়নি, একটু পর আবার চেষ্টা করুন", ad_skipped:"অ্যাড আগেই বন্ধ করেছেন — রিওয়ার্ড পাবেন না",
     daily_limit_reached:"আজকের অ্যাড লিমিট শেষ — কাল আবার আসুন",
-    task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন",
+    task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন", task_linklocker:"স্পন্সর্ড লিংক",
     gate_title:"আমাদের চ্যানেলে জয়েন করুন", gate_desc:"EarnHive ব্যবহার করে আয় শুরু করতে হলে আগে আমাদের অফিসিয়াল চ্যানেলে জয়েন করতে হবে।",
     easy_tasks:"সহজ টাস্ক", premium_tasks:"প্রিমিয়াম টাস্ক", offer_start:"শুরু করুন",
     offer_no_country:"আপনার দেশ/ডিভাইসের জন্য এখন এটা উপলব্ধ নেই", offer_reward_auto:"Start চাপুন, অফার পেজে যা লেখা আছে সেভাবে পূরণ/সম্পূর্ণ করুন, রিওয়ার্ড অটোমেটিক যোগ হয়ে যাবে",
@@ -644,7 +686,11 @@ const I18N = {
     team_tree:"شجرة فريقك 🌳", level1_short:"م1", level2_short:"م2", you:"أنت",
     wallet_title:"سحب", request_withdraw:"طلب السحب",
     processing_note:"تتم معالجة الدفعات خلال ١٢-٢٤ ساعة.",
-    nav_home:"الرئيسية", nav_tasks:"المهام", nav_team:"الخلية", nav_wallet:"المحفظة",
+    nav_home:"الرئيسية", nav_tasks:"المهام", nav_team:"الخلية", nav_wallet:"المحفظة", nav_shortener:"الروابط",
+    shortener_title:"مختصر الروابط", sl_total_links:"إجمالي الروابط", sl_total_views:"إجمالي المشاهدات",
+    sl_total_earned:"إجمالي الأرباح", sl_input_placeholder:"الصق رابطك هنا...", sl_create_btn:"إنشاء رابط",
+    sl_views_label:"مشاهدات", sl_earned_label:"أرباح", sl_copy_btn:"نسخ الرابط", sl_no_links:"لم تقم بإنشاء أي روابط بعد",
+    sl_invalid_url:"يرجى إدخال رابط صحيح يبدأ بـ http:// أو https://",
     task_join:"انضم للقناة", task_ad:"مشاهدة إعلان",
     claim:"احصل", done:"تم", verify:"تحقق",
     copied:"تم نسخ الرابط!", already_done:"تم الإنجاز اليوم بالفعل", not_joined:"لم تنضم بعد",
@@ -652,7 +698,7 @@ const I18N = {
     available:"المتاح", enter_valid_amount:"أدخل مبلغًا صحيحًا", min_amount_is:"الحد الأدنى للمبلغ هو", amount_exceeds_balance:"المبلغ يتجاوز رصيدك",
     today_label:"اليوم", ad_not_ready:"الإعلان غير جاهز بعد، حاول مرة أخرى بعد قليل", ad_skipped:"تم إغلاق الإعلان مبكرًا — لا مكافأة",
     daily_limit_reached:"تم الوصول للحد اليومي — عد غدًا",
-    task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر",
+    task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر", task_linklocker:"رابط برعاية",
     gate_title:"انضم إلى قناتنا", gate_desc:"يجب عليك الانضمام إلى قناتنا الرسمية أولاً لاستخدام EarnHive والبدء في الربح.",
     easy_tasks:"مهام سهلة", premium_tasks:"مهام مميزة", offer_start:"ابدأ",
     offer_no_country:"غير متاح في بلدك/جهازك الآن", offer_reward_auto:"اضغط ابدأ، أكمل الخطوات في صفحة العرض، وستتم إضافة المكافأة تلقائيًا",
@@ -690,6 +736,9 @@ function tr(key){ return (I18N[currentLang] && I18N[currentLang][key]) || I18N.e
 function applyTranslations(){
   document.querySelectorAll("[data-i]").forEach(el=>{
     el.textContent = tr(el.getAttribute("data-i"));
+  });
+  document.querySelectorAll("[data-i-placeholder]").forEach(el=>{
+    el.placeholder = tr(el.getAttribute("data-i-placeholder"));
   });
   document.getElementById("accountInput").placeholder =
     { bkash: "bKash number", usdt: "USDT (BEP20) wallet address", faucetpay: "FaucetPay email address" }[selectedMethod];
@@ -859,6 +908,7 @@ async function loadAppData(){
     renderAll();
     loadCpaleadOffers(); // ব্যাকগ্রাউন্ডে - ব্যর্থ হলেও বাকি অ্যাপ কাজ করবে
     loadPendingCpalead();
+    loadShortlinks();
     // প্রতি ২০ সেকেন্ডে "Pending" স্ট্যাটাস চেক করে - কোনো offer verify হয়ে গেলে
     // নিজে থেকেই "Pending" থেকে সরে যাবে আর balance আপডেট হবে, পেজ রিলোড লাগবে না।
     if(!state.pendingPollStarted){
@@ -869,6 +919,74 @@ async function loadAppData(){
     showToast("Connection error");
   }
 }
+
+/* ======================================================
+   URL SHORTENER (৫ নম্বর ঘর)
+   ====================================================== */
+async function loadShortlinks(){
+  try{
+    const res = await apiGet("/api/shortlink/list");
+    state.shortlinks = res.links || [];
+    state.shortlinkSummary = res.summary || { total_links:0, total_views:0, total_earned:0 };
+    renderShortlinks();
+  } catch(e){
+    // ব্যর্থ হলেও চুপচাপ থাকবে, বাকি অ্যাপ স্বাভাবিক কাজ করবে
+  }
+}
+
+function renderShortlinks(){
+  const summary = state.shortlinkSummary || { total_links:0, total_views:0, total_earned:0 };
+  document.getElementById("slTotalLinks").textContent = summary.total_links;
+  document.getElementById("slTotalViews").textContent = summary.total_views;
+  document.getElementById("slTotalEarned").textContent = "$" + Number(summary.total_earned || 0).toFixed(4);
+
+  const container = document.getElementById("shortenerLinksList");
+  const links = state.shortlinks || [];
+  if(links.length === 0){
+    container.innerHTML = `<div class="offer-empty">${tr("sl_no_links")}</div>`;
+    return;
+  }
+  container.innerHTML = links.map(l => `
+    <div class="sl-link-item">
+      <div class="sl-link-url">${escapeHTML(l.short_url)}</div>
+      <div class="sl-link-stats">
+        <span>👁 ${tr("sl_views_label")}: <b>${l.views}</b></span>
+        <span>💰 ${tr("sl_earned_label")}: <b>$${Number(l.total_reward || 0).toFixed(4)}</b></span>
+      </div>
+      <div class="sl-link-actions">
+        <button data-copy-url="${escapeHTML(l.short_url)}">${tr("sl_copy_btn")}</button>
+      </div>
+    </div>
+  `).join("");
+
+  container.querySelectorAll("[data-copy-url]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      navigator.clipboard.writeText(btn.getAttribute("data-copy-url"));
+      showToast(tr("copied"));
+    });
+  });
+}
+
+document.getElementById("shortenerCreateBtn").addEventListener("click", async ()=>{
+  const input = document.getElementById("shortenerUrlInput");
+  const url = input.value.trim();
+  if(!url || !(url.startsWith("http://") || url.startsWith("https://"))){
+    showToast(tr("sl_invalid_url"));
+    return;
+  }
+  try{
+    const res = await apiPost("/api/shortlink/create", { destination_url: url });
+    if(res.ok){
+      input.value = "";
+      showToast(tr("sl_create_btn") + " ✓");
+      loadShortlinks();
+    } else {
+      showToast(tr("sl_invalid_url"));
+    }
+  } catch(e){
+    showToast("Connection error");
+  }
+});
 
 /* ======================================================
    CPALEAD OFFERS
@@ -1047,13 +1165,25 @@ async function loadCpaleadOffers(){
     // অফার একসাথে আসে, "all" নামে কোনো বিশেষ ভ্যালু তারা সাপোর্ট করে না)।
     let url = `https://www.cpalead.com/api/offers?id=${encodeURIComponent(cfg.publisher_id)}`
       + `&subid=${encodeURIComponent(cfg.subid)}`
-      + `&fields=id,title,description,conversion,device,link,amount,countries,payout_type`;
+      + `&fields=id,title,description,conversion,device,link,amount,countries,payout_type,events`;
     if(country !== "all") url += `&country=${encodeURIComponent(country)}`;
     if(device !== "all") url += `&device=${encodeURIComponent(device)}`;
 
     const res = await fetch(url);
     const data = await res.json();
     let offers = (data && data.offers) || [];
+
+    // কিছু offer flat 'amount'-এর বদলে ধাপে ধাপে 'events' লিস্ট ব্যবহার করে (যেমন
+    // "সাইনআপ করুন" + "$5 ডিপোজিট করুন" আলাদা আলাদা payout সহ) - CPAlead-এর docs
+    // অনুযায়ী events-এর amount আগে থেকেই publisher payout split হিসেবে দেওয়া থাকে।
+    // এমন offer-এ flat amount শূন্য/কম থাকতে পারে, তাই events থাকলে তার সবচেয়ে বড়
+    // ধাপের payout ব্যবহার করা হচ্ছে - যাতে "+$0.00" দেখিয়ে ভুলভাবে বাদ না পড়ে।
+    offers = offers.map(o => {
+      const events = o.events || [];
+      const maxEventAmount = events.length ? Math.max(...events.map(ev => Number(ev.amount || 0))) : 0;
+      const baseAmount = Number(o.amount || 0);
+      return { ...o, amount: Math.max(baseAmount, maxEventAmount) };
+    });
 
     // CPAlead যে amount পাঠায় সেটা পুরোটা না, শুধু ইউজারের ভাগ (config.py-এর
     // CPALEAD_USER_SHARE_PERCENT অনুযায়ী) - কার্ডে যা দেখানো হবে সেটাই আসলে ইউজার পাবে।
@@ -1135,6 +1265,8 @@ function taskCardHTML(task){
     if(uiState.stage === "waiting"){ btnText = `${tr("please_wait")} ${uiState.countdown}s`; disabled = true; }
     else if(uiState.stage === "ready"){ btnText = tr("claim"); }
     else { btnText = tr("visit_site"); }
+  } else if(task.action_type === "link_locker"){
+    btnText = tr("visit_site");
   }
 
   const subtitle = `${task.done_count}/${task.limit_count} ${task.limit_type === "daily" ? tr("today_label") : ""}`.trim();
@@ -1197,6 +1329,27 @@ async function handleTaskClick(task){
       }, 1000);
     } else if(uiState.stage === "ready"){
       await claimTask(task);
+    }
+
+  } else if(task.action_type === "link_locker"){
+    // এটা claim করতে বটে ফিরে আসতে হয় না - বাইরের পেজেই সবকিছু (দুই ধাপ, রিওয়ার্ড,
+    // আসল লিংকে redirect) হয়ে যায়। শুধু link খুলে দিলেই যথেষ্ট।
+    try{
+      const res = await apiPost(`/api/linktask/${task.id}/start`, {});
+      if(res.error === "daily_limit_reached"){
+        showToast(tr("daily_limit_reached"));
+        task.maxed = true;
+        renderAll();
+        return;
+      }
+      if(res.ok && res.url){
+        if(tg) tg.openLink(res.url); else window.open(res.url, "_blank");
+        // ৩০ সেকেন্ড পর balance রিফ্রেশ করার চেষ্টা - ততক্ষণে সাধারণত ইউজার
+        // দুই ধাপ শেষ করে ফেলার কথা
+        setTimeout(refreshBalanceOnly, 30000);
+      }
+    } catch(e){
+      showToast("Connection error");
     }
   }
 }

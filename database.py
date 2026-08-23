@@ -95,6 +95,47 @@ def init_db():
         )
     """)
 
+    # নিজস্ব "Link Locker" টাস্কের জন্য - Telegram-এর বাইরে (আলাদা ব্রাউজার পেজে) খোলা
+    # ২-ধাপের বিজ্ঞাপন পেজে ইউজারকে নিরাপদে শনাক্ত করার জন্য একবার-ব্যবহারযোগ্য টোকেন।
+    # কোনো Telegram initData এই পেজগুলোতে পাওয়া যায় না, তাই টোকেনই একমাত্র প্রমাণ যে
+    # এই সম্পূর্ণকরণটা আসলে কোন ইউজারের জন্য গণ্য হবে।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS link_tokens (
+            id SERIAL PRIMARY KEY,
+            token TEXT UNIQUE NOT NULL,
+            user_id BIGINT,
+            task_id TEXT,
+            created_at TEXT,
+            used INTEGER DEFAULT 0
+        )
+    """)
+
+    # ---------- URL SHORTENER ("৫ নম্বর ঘর") ----------
+    # ইউজার নিজে যে লিংক শর্ট করে, সেটার তথ্য এখানে থাকে - কে বানিয়েছে, কোথায় যাবে,
+    # এখন পর্যন্ত মোট কতবার দেখা হয়েছে আর মোট কত রিওয়ার্ড এসেছে (এই owner-এর জন্য)।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS short_links (
+            id SERIAL PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            user_id BIGINT,
+            destination_url TEXT,
+            views INTEGER DEFAULT 0,
+            total_reward DOUBLE PRECISION DEFAULT 0,
+            created_at TEXT
+        )
+    """)
+
+    # একই IP থেকে একই শর্ট লিংকে ২৪ ঘণ্টার মধ্যে দ্বিতীয়বার view দিলে যাতে আবার
+    # reward না দেওয়া হয় (fraud protection) - সেই লগ এখানে রাখা হয়।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS short_link_views (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            viewer_ip TEXT,
+            created_at TEXT
+        )
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -446,3 +487,123 @@ def get_pending_cpalead(user_id):
     conn.close()
     return [dict(r) for r in rows]
 
+
+# ---------- LINK LOCKER TOKENS ----------
+
+def create_link_token(user_id, task_id):
+    """
+    ইউজার bot-এর ভেতর থেকে Link Locker টাস্কের 'Start' চাপলে একটা একবার-ব্যবহারযোগ্য
+    র‍্যান্ডম টোকেন তৈরি করে DB-তে রাখে - এই টোকেনটাই বাইরের বিজ্ঞাপন পেজ থেকে
+    ফিরে সঠিক ইউজারকে reward দেওয়ার একমাত্র প্রমাণ।
+    """
+    import secrets
+    token = secrets.token_urlsafe(24)
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO link_tokens (token, user_id, task_id, created_at, used) VALUES (%s, %s, %s, %s, 0)",
+        (token, user_id, task_id, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return token
+
+
+def get_link_token(token):
+    """টোকেন দিয়ে খুঁজে বের করে - এখনো valid (unused, ৩০ মিনিটের মধ্যে তৈরি) কিনা চেক করার জন্য।"""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM link_tokens WHERE token=%s", (token,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def mark_link_token_used(token):
+    """টোকেন একবার reward দেওয়ার পর 'used' করে দেয় - যাতে একই টোকেন দিয়ে দ্বিতীয়বার
+    reward না নেওয়া যায় (লিংক আবার ভিজিট করলে বা রিফ্রেশ করলেও)।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE link_tokens SET used=1 WHERE token=%s", (token,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# ---------- URL SHORTENER ----------
+
+def create_short_link(user_id, destination_url):
+    """ইউজার নতুন শর্ট লিংক তৈরি করলে এটা কল হয় - একটা ইউনিক কোড বানিয়ে সংরক্ষণ করে।"""
+    import secrets
+    code = secrets.token_urlsafe(5)[:7]
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO short_links (code, user_id, destination_url, views, total_reward, created_at) "
+        "VALUES (%s, %s, %s, 0, 0, %s)",
+        (code, user_id, destination_url, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return code
+
+
+def get_short_link(code):
+    """কোড দিয়ে একটা শর্ট লিংকের তথ্য বের করে (destination, owner ইত্যাদি)।"""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM short_links WHERE code=%s", (code,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_short_links(user_id):
+    """একজন ইউজারের তৈরি করা সব শর্ট লিংক, নতুন থেকে পুরনো ক্রমে।"""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "SELECT code, destination_url, views, total_reward, created_at "
+        "FROM short_links WHERE user_id=%s ORDER BY id DESC LIMIT 100",
+        (user_id,)
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def has_viewed_recently(code, ip):
+    """একই IP গত ২৪ ঘণ্টায় এই লিংক আগে দেখেছে কিনা - দেখলে আর নতুন reward দেওয়া হবে না।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+    cur.execute(
+        "SELECT 1 FROM short_link_views WHERE code=%s AND viewer_ip=%s AND created_at >= %s LIMIT 1",
+        (code, ip, cutoff)
+    )
+    exists = cur.fetchone() is not None
+    cur.close()
+    conn.close()
+    return exists
+
+
+def record_short_link_view(code, ip, reward):
+    """নতুন (duplicate না) view রেকর্ড করে, লিংকের views/total_reward বাড়ায়,
+    আর owner-এর মূল balance-এও reward যোগ করে।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO short_link_views (code, viewer_ip, created_at) VALUES (%s, %s, %s)",
+        (code, ip, datetime.utcnow().isoformat())
+    )
+    cur.execute(
+        "UPDATE short_links SET views = views + 1, total_reward = total_reward + %s WHERE code=%s",
+        (reward, code)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
