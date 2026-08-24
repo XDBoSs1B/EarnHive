@@ -536,7 +536,7 @@ def mark_link_token_used(token):
 def create_short_link(user_id, destination_url):
     """ইউজার নতুন শর্ট লিংক তৈরি করলে এটা কল হয় - একটা ইউনিক কোড বানিয়ে সংরক্ষণ করে।"""
     import secrets
-    code = secrets.token_urlsafe(5)[:7]
+    code = secrets.token_urlsafe(4)[:5]
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
