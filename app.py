@@ -523,6 +523,7 @@ def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, but
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EarnHive Link</title>
+<script src="https://pl30996895.profitableratecpmnetwork.com/8a/22/7c/8a227cb28dda795e2e8406c24441d3fb.js"></script>
 <style>
   body{{ background:#0a0c1c; color:#fff; font-family:sans-serif; text-align:center;
         margin:0; padding:24px 16px; min-height:100vh; box-sizing:border-box; }}
@@ -542,9 +543,19 @@ def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, but
 <body>
   <div class="step-label">STEP {step} / {total_steps}</div>
   <h2>⏳ Please wait...</h2>
-  <div class="ad-slot">Ad Space 1</div>
+  <div class="ad-slot" id="container-8452aed23c6fa87e0c37f7318a905dcb"></div>
+  <script async="async" data-cfasync="false" src="https://pl30996897.profitableratecpmnetwork.com/8452aed23c6fa87e0c37f7318a905dcb/invoke.js"></script>
   <div class="timer" id="countdown">{wait_seconds}</div>
-  <div class="ad-slot">Ad Space 2</div>
+  <div class="ad-slot"><script type="text/javascript">
+	atOptions = {{
+		'key' : 'ca59a32229f38b0f1d3f353b0d6a216a',
+		'format' : 'iframe',
+		'height' : 250,
+		'width' : 300,
+		'params' : {{}}
+	}};
+	document.write('<scr' + 'ipt src="https://www.profitableratecpmnetwork.com/ca59a32229f38b0f1d3f353b0d6a216a/invoke.js"></scr' + 'ipt>');
+  </script></div>
   <button class="go-btn" id="goBtn">{button_text}</button>
   <script>
     let remaining = {wait_seconds};
@@ -578,6 +589,7 @@ def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, but
       }}
     }}
   </script>
+  <script src="https://pl30996896.profitableratecpmnetwork.com/7c/35/6c/7c356ced4f6eed4fcd21c38d261ee60d.js"></script>
 </body>
 </html>"""
 
