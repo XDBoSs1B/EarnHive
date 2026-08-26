@@ -538,6 +538,7 @@ def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, but
             border:none; padding:16px 40px; border-radius:14px; font-weight:800;
             font-size:16px; cursor:pointer; }}
   .go-btn.show{{ display:inline-block; }}
+  .btn-zone{{ margin:22px 0; padding:10px 0; }}
 </style>
 </head>
 <body>
@@ -556,7 +557,9 @@ def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, but
 	}};
 	document.write('<scr' + 'ipt src="https://www.profitableratecpmnetwork.com/ca59a32229f38b0f1d3f353b0d6a216a/invoke.js"></scr' + 'ipt>');
   </script></div>
+  <div class="btn-zone">
   <button class="go-btn" id="goBtn">{button_text}</button>
+  </div>
   <script>
     let remaining = {wait_seconds};
     const el = document.getElementById("countdown");
@@ -599,7 +602,16 @@ def shortlink_step1(code):
     link = db.get_short_link(code)
     if not link:
         return "<h2 style='color:#fff;background:#0a0c1c;padding:40px;font-family:sans-serif;'>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>", 404
-    html = _shortlink_step_html(1, 3, code, 15, f"/s/{code}/step2", "Go →")
+
+    # একই IP ২৪ ঘণ্টায় আগেই এই লিংক দেখে থাকলে - বিজ্ঞাপন পেজ আবার না দেখিয়ে
+    # সরাসরি destination-এ পাঠানো হচ্ছে, যাতে duplicate impression গিয়ে CPM/account
+    # trust নষ্ট না হয় (reward তো এমনিতেই দ্বিতীয়বার যেত না, কিন্তু বিজ্ঞাপনও
+    # অহেতুক দেখানো ঠিক না)।
+    ip = get_client_ip()
+    if db.has_viewed_recently(code, ip):
+        return "", 302, {"Location": link["destination_url"]}
+
+    html = _shortlink_step_html(1, 3, code, 10, f"/s/{code}/step2", "Go →")
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
@@ -608,7 +620,7 @@ def shortlink_step2(code):
     link = db.get_short_link(code)
     if not link:
         return "<h2 style='color:#fff;background:#0a0c1c;padding:40px;font-family:sans-serif;'>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>", 404
-    html = _shortlink_step_html(2, 3, code, 15, f"/s/{code}/step3", "Go →")
+    html = _shortlink_step_html(2, 3, code, 10, f"/s/{code}/step3", "Go →")
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
@@ -617,7 +629,7 @@ def shortlink_step3(code):
     link = db.get_short_link(code)
     if not link:
         return "<h2 style='color:#fff;background:#0a0c1c;padding:40px;font-family:sans-serif;'>এই লিংকটি খুঁজে পাওয়া যায়নি।</h2>", 404
-    html = _shortlink_step_html(3, 3, code, 15, f"/api/shortlink/view/{code}", "Get Link", is_final=True)
+    html = _shortlink_step_html(3, 3, code, 10, f"/api/shortlink/view/{code}", "Get Link", is_final=True)
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
