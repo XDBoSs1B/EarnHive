@@ -76,6 +76,27 @@ CPALEAD_EASY_MAX_REWARD = 0.50
 CPALEAD_USER_SHARE_PERCENT = 70
 
 # =========================================
+# AdsGram (Rewarded Video Ad Network)
+# =========================================
+# Postback URL-এ যাচাইয়ের জন্য secret (URL অনুমান করে ভুয়া রিকোয়েস্ট ঠেকাতে)
+ADSGRAM_POSTBACK_SECRET = "earnhive_ads_secret_2026"
+
+# প্রতিটা সম্পূর্ণ দেখা (verified) ভিডিও অ্যাডের জন্য reward (USD এ)
+ADSGRAM_REWARD_PER_VIEW = 0.0003
+
+# প্রতিদিন একজন ইউজার সর্বোচ্চ কতটা AdsGram ভিডিও দেখে reward পেতে পারবে
+ADSGRAM_DAILY_LIMIT = 50
+
+# =========================================
+# ছবি আপলোড টাস্ক (Admin রিভিউ করে Approve করলে reward দেওয়া হয়)
+# =========================================
+# প্রতিটা Approve হওয়া ছবির জন্য reward (USD এ)
+PHOTO_UPLOAD_REWARD = 0.008
+
+# প্রতিদিন একজন ইউজার সর্বোচ্চ কতটা ছবি জমা দিতে পারবে (pending+approved+rejected মিলিয়ে)
+PHOTO_UPLOAD_DAILY_LIMIT = 10
+
+# =========================================
 # URL Shortener ("৫ নম্বর ঘর")
 # =========================================
 # প্রতিটা সত্যিকারের (duplicate না) view-এর জন্য শর্ট লিংক তৈরিকারী ইউজার কত পাবে।

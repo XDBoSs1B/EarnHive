@@ -6,6 +6,7 @@
 <meta name="offerwall-verification" content="6a8532d3588d28f78736fc34">
 <title>EarnHive</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -713,6 +714,15 @@ let state = { balance:0, total_earned:0, referrals:{level1:0,level2:0}, referral
 let selectedMethod = "bkash";
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
+
+// ---- AdsGram (Rewarded Video Block ID: 46770) ----
+// window.Adsgram স্ক্রিপ্ট <head>-এ synchronously লোড হয়, তাই এখানেই init করা নিরাপদ।
+let adsgramController = null;
+try{
+  if(window.Adsgram){
+    adsgramController = window.Adsgram.init({ blockId: "46770" });
+  }
+} catch(e){ /* AdsGram লোড না হলেও বাকি অ্যাপ স্বাভাবিকভাবে চলবে */ }
 if (tg) { tg.ready(); tg.expand(); }
 
 function setProfileAvatar(){
@@ -1297,7 +1307,30 @@ function renderTasks(){
 }
 
 async function handleTaskClick(task){
-  if(task.action_type === "ad_sdk"){
+  if(task.action_type === "adsgram"){
+    // AdsGram-এর reward সরাসরি ক্লায়েন্ট থেকে claim হয় না - AdsGram-এর নিজের সার্ভার
+    // ভিডিও সত্যিই শেষ হলে আমাদের ব্যাকএন্ডে postback পাঠায়, সেখান থেকেই balance যোগ হয়।
+    // তাই এখানে শুধু ad দেখানো হয়, তারপর কিছুক্ষণ পর balance/task-list রিফ্রেশ করা হয়।
+    if(!adsgramController){
+      showToast(tr("ad_not_ready"));
+      return;
+    }
+    try{
+      await adsgramController.show();
+    } catch(e){
+      showToast(tr("ad_skipped"));
+      return;
+    }
+    showToast(tr("claim")); // দেখা শেষ - reward postback আসতে কয়েক সেকেন্ড লাগতে পারে
+    setTimeout(async ()=>{
+      try{
+        await refreshBalanceOnly();
+        state.tasks = (await apiGet("/api/tasks")).tasks || [];
+        renderTasks();
+      } catch(e){}
+    }, 3000);
+
+  } else if(task.action_type === "ad_sdk"){
     const sdkFn = window[task.sdk_function];
     if(typeof sdkFn !== "function"){
       showToast(tr("ad_not_ready"));

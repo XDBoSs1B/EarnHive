@@ -64,6 +64,18 @@ TASKS = [
         "wait_seconds": 15,
     },
 
+    {
+        "id": "adsgram_view",
+        "title_key": "task_ad",
+        "icon": "🎬",
+        "icon_class": "ad",
+        "reward": 0.0003,   # শুধু UI-তে দেখানোর জন্য - আসল reward config.py-এর
+                            # ADSGRAM_REWARD_PER_VIEW দিয়ে দেওয়া হয় (postback থেকে), দুটো মান মিলিয়ে রাখুন
+        "limit_type": "daily",
+        "limit_count": 50,  # config.py-এর ADSGRAM_DAILY_LIMIT-এর সাথে মিলিয়ে রাখুন
+        "action_type": "adsgram",
+    },
+
     # ============================================================
     # নতুন টাস্ক যোগ করার উদাহরণ (এখন বন্ধ - "enabled": False):
     # নিচেরটা কপি করে enabled: True করে, তথ্য বদলে নতুন টাস্ক চালু করুন।
