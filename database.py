@@ -136,6 +136,35 @@ def init_db():
         )
     """)
 
+    # ---------- ছবি আপলোড টাস্ক ----------
+    # ইউজার বটে যে ছবি পাঠায় তার রেকর্ড - Telegram file_id দিয়ে রাখা হয় (আমাদের
+    # সার্ভারে আলাদা করে ছবি সেভ করতে হয় না, Telegram-ই হোস্ট করে)।
+    # status: pending -> admin review বাকি, approved -> reward দেওয়া হয়ে গেছে,
+    # rejected -> বাতিল হয়েছে, কোনো reward দেওয়া হয়নি।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS photo_submissions (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            file_id TEXT,
+            status TEXT DEFAULT 'pending',
+            reward DOUBLE PRECISION DEFAULT 0,
+            submitted_at TEXT,
+            reviewed_at TEXT
+        )
+    """)
+
+    # AdsGram থেকে verified reward view-এর রেকর্ড। AdsGram নিজস্ব কোনো transaction ID
+    # পাঠায় না (শুধু userid), তাই ডুপ্লিকেট/স্প্যাম ঠেকাতে দৈনিক লিমিট গণনার উপরই
+    # নির্ভর করা হয় - প্রতিটা ভিউ এখানে টাইমস্ট্যাম্পসহ লগ হয়।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS adsgram_views (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            reward DOUBLE PRECISION,
+            viewed_at TEXT
+        )
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -603,6 +632,90 @@ def record_short_link_view(code, ip, reward):
     cur.execute(
         "UPDATE short_links SET views = views + 1, total_reward = total_reward + %s WHERE code=%s",
         (reward, code)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# ---------- ছবি আপলোড টাস্ক ----------
+
+def count_today_photo_submissions(user_id):
+    """আজকে (গত ২৪ ঘণ্টায়) এই ইউজার কতগুলো ছবি জমা দিয়েছে - দৈনিক লিমিট চেক করার জন্য।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+    cur.execute(
+        "SELECT COUNT(*) FROM photo_submissions WHERE user_id=%s AND submitted_at >= %s",
+        (user_id, cutoff)
+    )
+    cnt = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return cnt
+
+
+def create_photo_submission(user_id, file_id):
+    """নতুন ছবি জমা পড়লে 'pending' স্ট্যাটাসে রেকর্ড তৈরি করে, নতুন রো-এর id ফেরত দেয়।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO photo_submissions (user_id, file_id, status, submitted_at) "
+        "VALUES (%s, %s, 'pending', %s) RETURNING id",
+        (user_id, file_id, datetime.utcnow().isoformat())
+    )
+    new_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return new_id
+
+
+def get_photo_submission(submission_id):
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM photo_submissions WHERE id=%s", (submission_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_photo_submission_status(submission_id, status, reward=0):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE photo_submissions SET status=%s, reward=%s, reviewed_at=%s WHERE id=%s",
+        (status, reward, datetime.utcnow().isoformat(), submission_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# ---------- AdsGram ----------
+
+def count_today_adsgram_views(user_id):
+    """আজকে (গত ২৪ ঘণ্টায়) এই ইউজার কতটা AdsGram ভিডিও দেখে reward পেয়েছে - দৈনিক লিমিট চেকের জন্য।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+    cur.execute(
+        "SELECT COUNT(*) FROM adsgram_views WHERE user_id=%s AND viewed_at >= %s",
+        (user_id, cutoff)
+    )
+    cnt = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return cnt
+
+
+def record_adsgram_view(user_id, reward):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO adsgram_views (user_id, reward, viewed_at) VALUES (%s, %s, %s)",
+        (user_id, reward, datetime.utcnow().isoformat())
     )
     conn.commit()
     cur.close()

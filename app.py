@@ -747,6 +747,48 @@ def cpalead_postback():
     return jsonify({"status": "success", "duplicate": False})
 
 
+@app.route("/api/adsgram/postback", methods=["GET"])
+def adsgram_postback():
+    """
+    AdsGram-এর সার্ভার ইউজার একটা Rewarded Video সম্পূর্ণ দেখে ফেললে এই এন্ডপয়েন্টে
+    কল করে। AdsGram partner ড্যাশবোর্ডে (Ad Block > Rewarded URL) এই লিংক বসাতে হয়:
+
+    {MINI_APP_BACKEND_URL}/api/adsgram/postback?userid=[userId]&secret=YOUR_SECRET
+
+    AdsGram নিজে থেকেই [userId] অংশটা আসল Telegram user id দিয়ে replace করে পাঠায়।
+    """
+    secret = request.args.get("secret", "")
+    if not config.ADSGRAM_POSTBACK_SECRET or secret != config.ADSGRAM_POSTBACK_SECRET:
+        return jsonify({"status": "error", "message": "invalid_secret"}), 403
+
+    userid_raw = request.args.get("userid", "").strip()
+    if not userid_raw:
+        return jsonify({"status": "error", "message": "missing_userid"}), 400
+
+    try:
+        user_id = int(userid_raw)
+    except ValueError:
+        return jsonify({"status": "error", "message": "invalid_userid"}), 400
+
+    user = db.get_user(user_id)
+    if not user:
+        return jsonify({"status": "error", "message": "user_not_found"}), 404
+
+    today_count = db.count_today_adsgram_views(user_id)
+    if today_count >= config.ADSGRAM_DAILY_LIMIT:
+        # লিমিট শেষ - AdsGram-কে তবুও success (2xx) পাঠানো হচ্ছে যাতে ওরা retry না করে,
+        # কিন্তু কোনো balance যোগ হবে না।
+        return jsonify({"status": "success", "limit_reached": True})
+
+    reward = config.ADSGRAM_REWARD_PER_VIEW
+    db.record_adsgram_view(user_id, reward)
+    db.add_balance(user_id, reward)
+    db.log_task_completion(user_id, "adsgram_view", reward)
+    distribute_referral_commission(user_id, reward)
+
+    return jsonify({"status": "success", "reward": reward})
+
+
 @app.route("/api/cpalead/track_start", methods=["POST"])
 def cpalead_track_start():
     """
@@ -993,6 +1035,39 @@ def handle_callback_query(callback_query):
 
     if from_user_id not in config.ADMIN_IDS:
         return
+
+    if data.startswith("photoapprove_") or data.startswith("photoreject_"):
+        action = "photoapprove" if data.startswith("photoapprove_") else "photoreject"
+        submission_id = int(data.split("_")[1])
+        submission = db.get_photo_submission(submission_id)
+
+        if not submission or submission["status"] != "pending":
+            requests.post(f"{TELEGRAM_API}/editMessageCaption", json={
+                "chat_id": chat_id, "message_id": message_id,
+                "caption": "এই ছবিটি ইতিমধ্যে প্রসেস করা হয়েছে।"
+            }, timeout=5)
+            return
+
+        if action == "photoapprove":
+            reward = config.PHOTO_UPLOAD_REWARD
+            db.update_photo_submission_status(submission_id, "approved", reward)
+            db.add_balance(submission["user_id"], reward)
+            db.log_task_completion(submission["user_id"], "photo_upload", reward)
+            tg_send_message(submission["user_id"], f"🎉 আপনার ছবি Approve হয়েছে! ${reward:.4f} যোগ হয়েছে।")
+            result_caption = f"✅ Approved: ID {submission_id} (${reward:.4f})"
+        else:
+            db.update_photo_submission_status(submission_id, "rejected", 0)
+            tg_send_message(submission["user_id"], "❌ দুঃখিত, আপনার ছবিটি গ্রহণযোগ্য মানের না হওয়ায় বাতিল করা হয়েছে।")
+            result_caption = f"❌ Rejected: ID {submission_id}"
+
+        try:
+            requests.post(f"{TELEGRAM_API}/editMessageCaption", json={
+                "chat_id": chat_id, "message_id": message_id, "caption": result_caption
+            }, timeout=5)
+        except Exception:
+            pass
+        return
+
     if not (data.startswith("approve_") or data.startswith("reject_")):
         return
 
@@ -1025,6 +1100,68 @@ def handle_callback_query(callback_query):
         pass
 
 
+def handle_photo_message(message):
+    """
+    ইউজার বটে ছবি পাঠালে এটা কল হয়। দৈনিক লিমিট চেক করে, সাবমিশন সেভ করে,
+    ইউজারকে কনফার্মেশন পাঠায়, আর অ্যাডমিনকে Approve/Reject বাটনসহ ছবিটা ফরওয়ার্ড করে -
+    ঠিক উইথড্র রিকোয়েস্টের মতোই।
+    """
+    chat_id = message["chat"]["id"]
+    user_id = message["from"]["id"]
+
+    # অ্যাডমিন নিজে ছবি পাঠালে এটা টাস্ক-সাবমিশন হিসেবে গণ্য হবে না
+    if user_id in config.ADMIN_IDS:
+        return
+
+    user = db.get_user(user_id)
+    if not user:
+        return
+
+    today_count = db.count_today_photo_submissions(user_id)
+    if today_count >= config.PHOTO_UPLOAD_DAILY_LIMIT:
+        tg_send_message(
+            chat_id,
+            f"⚠️ আজকের ছবি আপলোডের লিমিট ({config.PHOTO_UPLOAD_DAILY_LIMIT}টা) শেষ। "
+            f"কাল আবার চেষ্টা করুন।"
+        )
+        return
+
+    # সবচেয়ে বড় রেজোলিউশনের ভার্সনটা নেওয়া হয় (Telegram একই ছবির কয়েকটা সাইজ পাঠায়)
+    photos = message.get("photo")
+    if not photos:
+        return
+    file_id = photos[-1]["file_id"]
+
+    submission_id = db.create_photo_submission(user_id, file_id)
+
+    tg_send_message(
+        chat_id,
+        f"✅ ছবি পাওয়া গেছে (ID: {submission_id})।\n"
+        f"২৪ ঘণ্টার মধ্যে রিভিউ করে জানানো হবে। অ্যাপ্রুভ হলে ব্যালেন্সে যোগ হয়ে যাবে।"
+    )
+
+    reply_markup = {
+        "inline_keyboard": [[
+            {"text": "✅ Approve", "callback_data": f"photoapprove_{submission_id}"},
+            {"text": "❌ Reject", "callback_data": f"photoreject_{submission_id}"}
+        ]]
+    }
+    caption = (
+        f"🖼 নতুন ছবি সাবমিশন\nID: {submission_id}\nUser: {user_id}"
+        f" (@{user.get('username') or '-'})\nআজকে জমা: {today_count + 1}/{config.PHOTO_UPLOAD_DAILY_LIMIT}"
+    )
+    for admin_id in config.ADMIN_IDS:
+        try:
+            requests.post(f"{TELEGRAM_API}/sendPhoto", json={
+                "chat_id": admin_id,
+                "photo": file_id,
+                "caption": caption,
+                "reply_markup": reply_markup
+            }, timeout=10)
+        except Exception:
+            pass
+
+
 @app.route(f"/webhook/{config.BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
     update = request.get_json(silent=True) or {}
@@ -1036,6 +1173,8 @@ def telegram_webhook():
             handle_start_command(message)
         elif text.startswith("/pending"):
             handle_pending_command(message)
+        elif "photo" in message:
+            handle_photo_message(message)
 
     elif "callback_query" in update:
         handle_callback_query(update["callback_query"])

@@ -72,7 +72,7 @@ TASKS = [
         "reward": 0.0003,   # শুধু UI-তে দেখানোর জন্য - আসল reward config.py-এর
                             # ADSGRAM_REWARD_PER_VIEW দিয়ে দেওয়া হয় (postback থেকে), দুটো মান মিলিয়ে রাখুন
         "limit_type": "daily",
-        "limit_count": 50,  # config.py-এর ADSGRAM_DAILY_LIMIT-এর সাথে মিলিয়ে রাখুন
+        "limit_count": 30,  # config.py-এর ADSGRAM_DAILY_LIMIT-এর সাথে মিলিয়ে রাখুন
         "action_type": "adsgram",
     },
 
