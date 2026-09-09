@@ -940,23 +940,23 @@ def send_open_app_message(chat_id, start_param=""):
             {"text": "🚀 Open EarnHive", "web_app": {"url": web_app_url}}
         ]]
     }
-    tg_send_message(chat_id, "🎉 EarnHive-এ স্বাগতম!\n\nনিচের বাটনে ক্লিক করে অ্যাপ খুলুন এবং আয় শুরু করুন।", reply_markup)
+    tg_send_message(chat_id, "🎉 Welcome to EarnHive!\n\nTap the button below to open the app and start earning.", reply_markup)
 
 
 def send_join_channel_message(chat_id, user_id, start_param=""):
     channel_username = config.REQUIRED_CHANNEL.lstrip("@")
     reply_markup = {
         "inline_keyboard": [
-            [{"text": "📢 চ্যানেলে জয়েন করুন", "url": f"https://t.me/{channel_username}"}],
-            [{"text": "✅ জয়েন করেছি - ভেরিফাই করুন", "callback_data": f"checkjoin_{start_param}"}]
+            [{"text": "📢 Join Channel", "url": f"https://t.me/{channel_username}"}],
+            [{"text": "✅ I've Joined - Verify", "callback_data": f"checkjoin_{start_param}"}]
         ]
     }
     tg_send_message(
         chat_id,
-        "🎉 EarnHive-এ স্বাগতম!\n\n"
-        "অ্যাপ ব্যবহার শুরু করার আগে আমাদের অফিসিয়াল চ্যানেলে জয়েন করতে হবে।\n\n"
-        "1️⃣ নিচে চ্যানেলে জয়েন করুন\n"
-        "2️⃣ তারপর \"জয়েন করেছি\" বাটনে ক্লিক করুন",
+        "🎉 Welcome to EarnHive!\n\n"
+        "You need to join our official channel before using the app.\n\n"
+        "1️⃣ Join the channel below\n"
+        "2️⃣ Then tap \"I've Joined\"",
         reply_markup
     )
 
@@ -1021,7 +1021,7 @@ def handle_callback_query(callback_query):
             try:
                 requests.post(f"{TELEGRAM_API}/answerCallbackQuery", json={
                     "callback_query_id": callback_id,
-                    "text": "❌ এখনো চ্যানেলে জয়েন করেননি! আগে জয়েন করুন।",
+                    "text": "❌ You haven't joined the channel yet! Please join first.",
                     "show_alert": True
                 }, timeout=5)
             except Exception:
