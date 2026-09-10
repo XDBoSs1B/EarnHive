@@ -62,7 +62,7 @@ ADSGRAM_POSTBACK_SECRET = "earnhive_ads_secret_2026"
 ADSGRAM_REWARD_PER_VIEW = 0.0003
 
 # প্রতিদিন একজন ইউজার সর্বোচ্চ কতটা AdsGram ভিডিও দেখে reward পেতে পারবে
-ADSGRAM_DAILY_LIMIT = 30
+ADSGRAM_DAILY_LIMIT = 20
 
 # =========================================
 # ছবি আপলোড টাস্ক (Admin রিভিউ করে Approve করলে reward দেওয়া হয়)

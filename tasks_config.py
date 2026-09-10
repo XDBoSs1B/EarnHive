@@ -78,6 +78,20 @@ TASKS = [
     },
 
     {
+        "id": "install_getblock",
+        "title_key": "task_install_getblock",
+        "desc_key": "desc_install_getblock",
+        "icon": "📲",
+        "icon_class": "ad",
+        "reward": 0.055,
+        "limit_type": "once",
+        "limit_count": 1,
+        "action_type": "external_link",
+        "link_url": "https://getblock.me/u/30551780",
+        "wait_seconds": 120,
+    },
+
+    {
         "id": "adsgram_view",
         "title_key": "task_ad",
         "icon": "🎬",
@@ -85,7 +99,7 @@ TASKS = [
         "reward": 0.0003,   # শুধু UI-তে দেখানোর জন্য - আসল reward config.py-এর
                             # ADSGRAM_REWARD_PER_VIEW দিয়ে দেওয়া হয় (postback থেকে), দুটো মান মিলিয়ে রাখুন
         "limit_type": "daily",
-        "limit_count": 30,  # config.py-এর ADSGRAM_DAILY_LIMIT-এর সাথে মিলিয়ে রাখুন
+        "limit_count": 20,  # config.py-এর ADSGRAM_DAILY_LIMIT-এর সাথে মিলিয়ে রাখুন
         "action_type": "adsgram",
     },
 

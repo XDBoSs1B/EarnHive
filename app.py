@@ -202,23 +202,15 @@ def get_tasks():
         else:  # "once"
             done_count = db.get_task_completion_count_ever(user_id, t["id"])
         limit_count = t["limit_count"]
-        result.append({
-            "id": t["id"],
-            "title_key": t["title_key"],
-            "icon": t["icon"],
-            "icon_class": t["icon_class"],
-            "reward": t["reward"],
-            "limit_type": t["limit_type"],
-            "limit_count": limit_count,
-            "done_count": done_count,
-            "maxed": done_count >= limit_count,
-            "action_type": t["action_type"],
-            "sdk_src": t.get("sdk_src"),
-            "sdk_zone": t.get("sdk_zone"),
-            "sdk_function": t.get("sdk_function"),
-            "link_url": t.get("link_url"),
-            "wait_seconds": t.get("wait_seconds"),
-        })
+        # t-এর সব ফিল্ড (id, title_key, desc_key, reward, link_url ইত্যাদি - যা কিছু
+        # tasks_config.py-তে লেখা থাকুক) এমনিতেই এখানে চলে আসে - নতুন কোনো ফিল্ড
+        # (যেমন ভবিষ্যতে "video_url" বা অন্য কিছু) tasks_config.py-তে যোগ করলে এই
+        # ফাংশন আর বদলাতে হবে না, শুধু "enabled" ফ্ল্যাগটা বাদ দেওয়া হচ্ছে কারণ
+        # সেটা শুধু সার্ভারের নিজের হিসাব, ফ্রন্টএন্ডের দরকার নেই।
+        task_data = {k: v for k, v in t.items() if k != "enabled"}
+        task_data["done_count"] = done_count
+        task_data["maxed"] = done_count >= limit_count
+        result.append(task_data)
     return jsonify({"tasks": result})
 
 
