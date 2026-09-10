@@ -68,30 +68,15 @@ def init_db():
         )
     """)
 
-    # CPAlead থেকে আসা conversion (postback) গুলোর রেকর্ড - lead_id UNIQUE রাখা হয়েছে
-    # যাতে CPAlead একই postback রিট্রাই/ডুপ্লিকেট পাঠালেও দ্বিতীয়বার টাকা যোগ না হয়।
+    # external_link টাইপ টাস্কে (wait_seconds থাকা টাস্ক) ইউজার "Visit" চাপলে এখানে
+    # সার্ভার-সাইড টাইমস্ট্যাম্প রেকর্ড হয় - claim করার সময় এই টাইমস্ট্যাম্প থেকে
+    # সত্যিই যথেষ্ট সময় গেছে কিনা যাচাই করা হয়, শুধু ক্লায়েন্টের timer বিশ্বাস করা হয় না।
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS cpalead_conversions (
-            id SERIAL PRIMARY KEY,
-            lead_id TEXT UNIQUE NOT NULL,
+        CREATE TABLE IF NOT EXISTS task_starts (
             user_id BIGINT,
-            offer_id TEXT,
-            campaign_name TEXT,
-            payout DOUBLE PRECISION,
-            created_at TEXT
-        )
-    """)
-
-    # ইউজার কোন CPAlead offer-এ "Start" চাপলো তার রেকর্ড - postback (verify) আসার আগ পর্যন্ত
-    # "Pending" হিসেবে দেখানোর জন্য।
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS cpalead_started (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT,
-            offer_id TEXT,
-            title TEXT,
-            amount DOUBLE PRECISION,
-            started_at TEXT
+            task_id TEXT,
+            started_at TEXT,
+            PRIMARY KEY (user_id, task_id)
         )
     """)
 
@@ -453,68 +438,46 @@ def get_withdrawal(withdrawal_id):
     return row
 
 
-# ---------- CPALEAD CONVERSIONS ----------
+# ---------- TASK START (সার্ভার-সাইড wait যাচাই) ----------
 
-def record_cpalead_conversion(lead_id, user_id, offer_id, campaign_name, payout):
-    """
-    CPAlead postback থেকে আসা conversion স্টোর করার চেষ্টা করে।
-    lead_id UNIQUE কলাম হওয়ায়, একই lead_id দ্বিতীয়বার এলে insert হবে না (ON CONFLICT DO NOTHING)।
-    Return: True মানে এটা নতুন/প্রথমবার (balance যোগ করা উচিত),
-            False মানে এটা আগেই প্রসেস হয়ে গেছে (duplicate - balance যোগ করা যাবে না)।
-    """
+def record_task_start(user_id, task_id):
+    """ইউজার 'Visit'-এ চাপলে সার্ভার-সাইড টাইমস্ট্যাম্প রেকর্ড/আপডেট করে।"""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO cpalead_conversions (lead_id, user_id, offer_id, campaign_name, payout, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (lead_id) DO NOTHING",
-        (lead_id, user_id, offer_id, campaign_name, payout, datetime.utcnow().isoformat())
-    )
-    inserted = cur.rowcount > 0
-    conn.commit()
-    cur.close()
-    conn.close()
-    return inserted
-
-
-def record_cpalead_start(user_id, offer_id, title, amount):
-    """ইউজার একটা CPAlead offer-এ 'Start' চাপলে এটা রেকর্ড হয় - এখান থেকেই 'Pending' লিস্ট তৈরি হয়।"""
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO cpalead_started (user_id, offer_id, title, amount, started_at) VALUES (%s, %s, %s, %s, %s)",
-        (user_id, offer_id, title, amount, datetime.utcnow().isoformat())
+        "INSERT INTO task_starts (user_id, task_id, started_at) VALUES (%s, %s, %s) "
+        "ON CONFLICT (user_id, task_id) DO UPDATE SET started_at = EXCLUDED.started_at",
+        (user_id, task_id, datetime.utcnow().isoformat())
     )
     conn.commit()
     cur.close()
     conn.close()
 
 
-def get_pending_cpalead(user_id):
-    """
-    ইউজার যেসব CPAlead offer 'Start' করেছে কিন্তু এখনো postback দিয়ে verify হয়নি,
-    তাদের তালিকা ফেরত দেয় (Tasks পেজে 'Pending' হিসেবে দেখানোর জন্য)।
-    ৩ দিনের বেশি পুরনো এন্ট্রি আর 'Pending' তালিকায় দেখানো হয় না (তালিকা পরিষ্কার
-    রাখার জন্য) - কিন্তু এর পরেও যদি CPAlead postback পাঠায়, balance ঠিকই যোগ হবে,
-    এই cutoff শুধু UI-তে কতদিন 'Pending' দেখাবে সেটা নিয়ন্ত্রণ করে।
-    """
+def get_task_start(user_id, task_id):
+    """সংশ্লিষ্ট টাস্কের সর্বশেষ 'start' টাইমস্ট্যাম্প (datetime) ফেরত দেয়, না থাকলে None।"""
     conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
-    cur.execute("""
-        SELECT s.offer_id, s.title, s.amount, s.started_at
-        FROM cpalead_started s
-        WHERE s.user_id = %s AND s.started_at >= %s
-        AND NOT EXISTS (
-            SELECT 1 FROM cpalead_conversions c
-            WHERE c.user_id = s.user_id AND c.offer_id = s.offer_id AND c.created_at >= s.started_at
-        )
-        ORDER BY s.started_at DESC
-        LIMIT 20
-    """, (user_id, cutoff))
-    rows = cur.fetchall()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT started_at FROM task_starts WHERE user_id=%s AND task_id=%s",
+        (user_id, task_id)
+    )
+    row = cur.fetchone()
     cur.close()
     conn.close()
-    return [dict(r) for r in rows]
+    if not row:
+        return None
+    return datetime.fromisoformat(row[0])
+
+
+def clear_task_start(user_id, task_id):
+    """সফলভাবে claim হয়ে গেলে start রেকর্ডটা মুছে দেয়, যাতে পুরনো timestamp পরে আবার reuse না হয়।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM task_starts WHERE user_id=%s AND task_id=%s", (user_id, task_id))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 # ---------- LINK LOCKER TOKENS ----------

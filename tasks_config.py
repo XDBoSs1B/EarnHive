@@ -11,7 +11,7 @@
 #
 # action_type এর সম্ভাব্য মান:
 #   "ad_sdk"        -> Monetag/AdsGram এর মতো ইন-অ্যাপ রিওয়ার্ডেড ভিডিও SDK
-#   "external_link" -> Adsterra/CPAlead এর মতো বাইরের লিংকে পাঠিয়ে অপেক্ষার পর claim করানো
+#   "external_link" -> Adsterra/HilltopAds/অন্য যেকোনো বাইরের লিংকে পাঠিয়ে অপেক্ষার পর claim করানো
 
 TASKS = [
     {
@@ -65,6 +65,19 @@ TASKS = [
     },
 
     {
+        "id": "hilltop_direct",
+        "title_key": "task_click",
+        "icon": "🖱️",
+        "icon_class": "web",
+        "reward": 0.0001,
+        "limit_type": "daily",
+        "limit_count": 10,
+        "action_type": "external_link",
+        "link_url": "https://affectionatestorage.com/MezkUF",
+        "wait_seconds": 5,
+    },
+
+    {
         "id": "adsgram_view",
         "title_key": "task_ad",
         "icon": "🎬",
@@ -89,7 +102,7 @@ TASKS = [
     #     "limit_type": "once",
     #     "limit_count": 1,
     #     "action_type": "external_link",
-    #     "link_url": "https://example-cpalead-offer-link.com/xxxx",
+    #     "link_url": "https://example-offer-link.com/xxxx",
     #     "wait_seconds": 20,
     #     "enabled": False,
     # },

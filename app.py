@@ -222,6 +222,27 @@ def get_tasks():
     return jsonify({"tasks": result})
 
 
+@app.route("/api/task/<task_id>/start", methods=["POST"])
+def start_task(task_id):
+    """
+    'wait_seconds' থাকা (external_link) টাস্কে ইউজার লিংক ওপেন করার সময় ফ্রন্টএন্ড এটা
+    কল করে - সার্ভারে একটা সময়-স্ট্যাম্প রেকর্ড হয়, যেটা claim_task পরে যাচাই করবে।
+    শুধু ক্লায়েন্টের timer বিশ্বাস না করে সার্ভার নিজেই বাস্তব সময় গণনা করবে, তাই
+    কেউ ক্লিক করেই সাথে সাথে ফিরে এসে claim করার চেষ্টা করলে সেটা প্রত্যাখ্যাত হবে।
+    """
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    task = tasks_config.get_task_by_id(task_id)
+    if not task or not task.get("enabled", True) or not task.get("wait_seconds"):
+        return jsonify({"error": "task_not_found"}), 404
+
+    db.record_task_start(user_id, task_id)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/task/<task_id>/claim", methods=["POST"])
 def claim_task(task_id):
     """
@@ -240,6 +261,16 @@ def claim_task(task_id):
     if not task or not task.get("enabled", True):
         return jsonify({"error": "task_not_found"}), 404
 
+    # wait_seconds থাকা (external_link) টাস্কের জন্য সার্ভার-সাইড সময় যাচাই -
+    # ইউজার সত্যিই কমপক্ষে wait_seconds সময় অপেক্ষা করেছে কিনা, ক্লায়েন্টের কথায় না।
+    if task.get("wait_seconds"):
+        started = db.get_task_start(user_id, task_id)
+        if not started:
+            return jsonify({"error": "not_started"}), 400
+        elapsed = (datetime.utcnow() - started).total_seconds()
+        if elapsed < task["wait_seconds"]:
+            return jsonify({"error": "wait_not_complete", "remaining": round(task["wait_seconds"] - elapsed, 1)}), 400
+
     if task["limit_type"] == "daily":
         done_count = db.get_task_completion_count_today(user_id, task_id)
     else:
@@ -252,6 +283,8 @@ def claim_task(task_id):
     db.add_balance(user_id, reward)
     db.log_task_completion(user_id, task_id, reward)
     distribute_referral_commission(user_id, reward)
+    if task.get("wait_seconds"):
+        db.clear_task_start(user_id, task_id)
 
     user = db.get_user(user_id)
     new_count = done_count + 1
@@ -653,100 +686,6 @@ def shortlink_view_complete(code):
     return jsonify({"ok": True, "destination": link["destination_url"]})
 
 
-@app.route("/api/cpalead/config", methods=["GET"])
-def cpalead_config():
-    """
-    Mini App-এর ফ্রন্টএন্ড (ইউজারের নিজের ফোনে চলা ব্রাউজার) এখান থেকে publisher_id
-    আর subid নিয়ে, তারপর CPAlead-এর Offers API-কে *সরাসরি নিজে থেকেই* কল করবে
-    (country=user&device=user দিয়ে) - যাতে CPAlead সত্যিকারের ইউজার IP/User-Agent
-    দেখে সঠিক দেশ ও ডিভাইস অনুযায়ী offer ফেরত দেয়। আমাদের সার্ভার থেকে এই কল করলে
-    CPAlead আমাদের সার্ভারের IP/লোকেশন দেখত, যেটা ভুল হতো।
-
-    subid হিসেবে আমরা ইউজারের নিজস্ব verified Telegram user_id পাঠাচ্ছি (initData
-    দিয়ে ভেরিফাই করা, ক্লায়েন্টের দেওয়া কোনো মান না) - যাতে postback ফিরে এলে
-    আমরা নিশ্চিতভাবে সঠিক ইউজারকে ক্রেডিট দিতে পারি।
-    """
-    auth_user = get_authed_user()
-    if not auth_user:
-        return jsonify({"error": "invalid_init_data"}), 401
-    user_id = auth_user["user_id"]
-
-    if not require_channel_member(user_id):
-        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
-
-    if not config.CPALEAD_PUBLISHER_ID:
-        return jsonify({"enabled": False})
-
-    return jsonify({
-        "enabled": True,
-        "publisher_id": config.CPALEAD_PUBLISHER_ID,
-        "subid": str(user_id),
-        "easy_max_reward": config.CPALEAD_EASY_MAX_REWARD,
-        "user_share_percent": config.CPALEAD_USER_SHARE_PERCENT,
-    })
-
-
-@app.route("/api/cpalead/postback", methods=["GET"])
-def cpalead_postback():
-    """
-    CPAlead-এর সার্ভার এই এন্ডপয়েন্টে কল করবে যখন কোনো offer সত্যিকারের conversion
-    (verified completion) হিসেবে গণ্য হয়। এটা ইউজারের ব্রাউজার থেকে না, CPAlead-এর
-    নিজের সার্ভার থেকে সরাসরি কল হয় (server-to-server) - তাই Telegram initData
-    ভেরিফিকেশন এখানে প্রযোজ্য না, বরং password প্যারামিটার দিয়ে যাচাই করা হয়।
-
-    CPAlead dashboard-এ (Settings > Global Postback / Offerwall Postback) এই URL বসাতে হবে:
-    {MINI_APP_BACKEND_URL}/api/cpalead/postback?subid={subid}&lead_id={lead_id}&campaign_id={campaign_id}&campaign_name={campaign_name}&payout={payout}&password=YOUR_SECRET
-    """
-    password = request.args.get("password", "")
-    if not config.CPALEAD_POSTBACK_PASSWORD or password != config.CPALEAD_POSTBACK_PASSWORD:
-        return jsonify({"status": "error", "message": "invalid_password"}), 403
-
-    subid = request.args.get("subid", "").strip()
-    lead_id = request.args.get("lead_id", "").strip()
-    offer_id = request.args.get("campaign_id", "").strip()
-    campaign_name = request.args.get("campaign_name", "").strip()
-    payout_raw = request.args.get("payout", "0")
-
-    if not subid or not lead_id:
-        return jsonify({"status": "error", "message": "missing_subid_or_lead_id"}), 400
-
-    try:
-        user_id = int(subid)
-    except ValueError:
-        return jsonify({"status": "error", "message": "invalid_subid"}), 400
-
-    try:
-        payout = float(payout_raw)
-    except (TypeError, ValueError):
-        payout = 0.0
-
-    if payout <= 0:
-        return jsonify({"status": "error", "message": "invalid_payout"}), 400
-
-    user = db.get_user(user_id)
-    if not user:
-        # যাকে ক্রেডিট দেওয়ার কথা সেই ইউজারই আমাদের সিস্টেমে নেই - স্প্যাম/ভুল subid,
-        # কোনো balance যোগ করা হবে না।
-        return jsonify({"status": "error", "message": "user_not_found"}), 404
-
-    is_new = db.record_cpalead_conversion(lead_id, user_id, offer_id, campaign_name, payout)
-    if not is_new:
-        # আগেই প্রসেস হয়ে গেছে - দ্বিতীয়বার টাকা যোগ হবে না, কিন্তু CPAlead-কে 2xx-ই
-        # পাঠানো হচ্ছে যাতে ওরা এটাকে ব্যর্থ ধরে বারবার রিট্রাই না করে।
-        return jsonify({"status": "success", "duplicate": True})
-
-    # CPAlead যে পুরো payout পাঠিয়েছে, তার একটা অংশই ইউজারকে দেওয়া হয় (config.py-তে
-    # CPALEAD_USER_SHARE_PERCENT দিয়ে ঠিক করা) - পুরো payout এমনিতেই আপনার নিজের
-    # CPAlead অ্যাকাউন্টে জমা হয়ে যায়, এটা শুধু অ্যাপের ভেতরের ভাগ ঠিক করে।
-    user_share = payout * (config.CPALEAD_USER_SHARE_PERCENT / 100)
-
-    db.add_balance(user_id, user_share)
-    db.log_task_completion(user_id, f"cpalead_{offer_id}" if offer_id else "cpalead", user_share)
-    distribute_referral_commission(user_id, user_share)
-
-    return jsonify({"status": "success", "duplicate": False})
-
-
 @app.route("/api/adsgram/postback", methods=["GET"])
 def adsgram_postback():
     """
@@ -787,47 +726,6 @@ def adsgram_postback():
     distribute_referral_commission(user_id, reward)
 
     return jsonify({"status": "success", "reward": reward})
-
-
-@app.route("/api/cpalead/track_start", methods=["POST"])
-def cpalead_track_start():
-    """
-    ইউজার কোনো CPAlead offer-এ 'Start' চাপলে ফ্রন্টএন্ড এটা কল করে - এখান থেকেই
-    Tasks পেজে 'Pending' লিস্ট তৈরি হয়, যতক্ষণ না postback দিয়ে verify হয়।
-    """
-    auth_user = get_authed_user()
-    if not auth_user:
-        return jsonify({"error": "invalid_init_data"}), 401
-    user_id = auth_user["user_id"]
-
-    if not require_channel_member(user_id):
-        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
-
-    body = request.get_json(silent=True) or {}
-    offer_id = str(body.get("offer_id", "")).strip()
-    title = str(body.get("title", "")).strip()[:200]
-    try:
-        amount = float(body.get("amount", 0))
-    except (TypeError, ValueError):
-        amount = 0.0
-
-    if not offer_id:
-        return jsonify({"error": "missing_offer_id"}), 400
-
-    db.record_cpalead_start(user_id, offer_id, title, amount)
-    return jsonify({"ok": True})
-
-
-@app.route("/api/cpalead/pending", methods=["GET"])
-def cpalead_pending():
-    """ইউজার যেসব CPAlead offer শুরু করেছে কিন্তু এখনো verify হয়নি, তার তালিকা।"""
-    auth_user = get_authed_user()
-    if not auth_user:
-        return jsonify({"error": "invalid_init_data"}), 401
-    user_id = auth_user["user_id"]
-
-    pending = db.get_pending_cpalead(user_id)
-    return jsonify({"pending": pending})
 
 
 @app.route("/api/referral", methods=["GET"])

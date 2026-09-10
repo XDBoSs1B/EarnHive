@@ -163,7 +163,7 @@
   .task-btn:disabled{ background:rgba(255,255,255,0.08); color:var(--text-low); box-shadow:none; }
   .task-btn.done{ background:rgba(255,255,255,0.06); color:var(--accent-cyan); box-shadow:none; }
 
-  /* ---------- CPAlead offer cards ---------- */
+  /* ---------- অফার কার্ড (External offer/task cards) ---------- */
   .offer-category-title{
     display:flex; align-items:center; gap:8px; margin:22px 0 10px; font-weight:800; font-size:14px;
   }
@@ -622,7 +622,7 @@ const I18N = {
     sl_total_earned:"Total Earned", sl_input_placeholder:"Paste your link here...", sl_create_btn:"Create Link",
     sl_views_label:"Views", sl_earned_label:"Earned", sl_copy_btn:"Copy Link", sl_no_links:"You haven't created any links yet",
     sl_invalid_url:"Please enter a valid link starting with http:// or https://",
-    task_join:"Join Channel", task_ad:"Watch Ad",
+    task_join:"Join Channel", task_ad:"Watch Ad", task_click:"Click & Earn",
     claim:"Claim", done:"Done", verify:"Verify",
     copied:"Link copied!", already_done:"Already completed today", not_joined:"You haven't joined yet",
     reward_earned:"You earned", insufficient:"Balance below minimum withdrawal", withdraw_success:"Withdrawal requested!",
@@ -657,7 +657,7 @@ const I18N = {
     sl_total_earned:"মোট আয়", sl_input_placeholder:"আপনার লিংক এখানে বসান...", sl_create_btn:"লিংক তৈরি করুন",
     sl_views_label:"ভিউ", sl_earned_label:"আয়", sl_copy_btn:"লিংক কপি করুন", sl_no_links:"আপনি এখনো কোনো লিংক তৈরি করেননি",
     sl_invalid_url:"http:// বা https:// দিয়ে শুরু হওয়া সঠিক লিংক দিন",
-    task_join:"চ্যানেল জয়েন করুন", task_ad:"অ্যাড দেখুন",
+    task_join:"চ্যানেল জয়েন করুন", task_ad:"অ্যাড দেখুন", task_click:"ক্লিক করে আয় করুন",
     claim:"নিন", done:"সম্পন্ন", verify:"চেক করুন",
     copied:"লিংক কপি হয়েছে!", already_done:"আজকে ইতিমধ্যে সম্পন্ন হয়েছে", not_joined:"আপনি এখনো জয়েন করেননি",
     reward_earned:"আপনি পেয়েছেন", insufficient:"ব্যালেন্স মিনিমাম উইথড্রর চেয়ে কম", withdraw_success:"উইথড্র রিকোয়েস্ট করা হয়েছে!",
@@ -692,7 +692,7 @@ const I18N = {
     sl_total_earned:"إجمالي الأرباح", sl_input_placeholder:"الصق رابطك هنا...", sl_create_btn:"إنشاء رابط",
     sl_views_label:"مشاهدات", sl_earned_label:"أرباح", sl_copy_btn:"نسخ الرابط", sl_no_links:"لم تقم بإنشاء أي روابط بعد",
     sl_invalid_url:"يرجى إدخال رابط صحيح يبدأ بـ http:// أو https://",
-    task_join:"انضم للقناة", task_ad:"مشاهدة إعلان",
+    task_join:"انضم للقناة", task_ad:"مشاهدة إعلان", task_click:"انقر واربح",
     claim:"احصل", done:"تم", verify:"تحقق",
     copied:"تم نسخ الرابط!", already_done:"تم الإنجاز اليوم بالفعل", not_joined:"لم تنضم بعد",
     reward_earned:"لقد ربحت", insufficient:"الرصيد أقل من الحد الأدنى للسحب", withdraw_success:"تم طلب السحب!",
@@ -916,15 +916,7 @@ async function loadAppData(){
     renderReferralBreakdown();
 
     renderAll();
-    loadCpaleadOffers(); // ব্যাকগ্রাউন্ডে - ব্যর্থ হলেও বাকি অ্যাপ কাজ করবে
-    loadPendingCpalead();
     loadShortlinks();
-    // প্রতি ২০ সেকেন্ডে "Pending" স্ট্যাটাস চেক করে - কোনো offer verify হয়ে গেলে
-    // নিজে থেকেই "Pending" থেকে সরে যাবে আর balance আপডেট হবে, পেজ রিলোড লাগবে না।
-    if(!state.pendingPollStarted){
-      state.pendingPollStarted = true;
-      setInterval(loadPendingCpalead, 20000);
-    }
   } catch(e){
     showToast("Connection error");
   }
@@ -998,150 +990,10 @@ document.getElementById("shortenerCreateBtn").addEventListener("click", async ()
   }
 });
 
-/* ======================================================
-   CPALEAD OFFERS
-   এই কলটা ইচ্ছাকৃতভাবে ইউজারের নিজের ডিভাইস/ব্রাউজার থেকে সরাসরি CPAlead-কে করা হয়
-   (আমাদের ব্যাকএন্ড থেকে না), যাতে country=user ও device=user প্যারামিটার দিয়ে
-   CPAlead সত্যিকারের ইউজার IP ও User-Agent দেখে সঠিক দেশ/ডিভাইস অনুযায়ী অফার দেয়।
-   এছাড়া ইউজার নিজে থেকেও দেশ/ডিভাইস বেছে নিতে পারে (offerCountrySelect/offerDeviceSelect) -
-   CPAlead-এর API নিজেই এক্সপ্লিসিট country/device কোড সাপোর্ট করে (docs অনুযায়ী)।
-   ====================================================== */
-const OFFER_COUNTRIES = [
-  ["user", null], ["all", null], ["BD","Bangladesh"], ["IN","India"], ["PK","Pakistan"], ["US","United States"],
-  ["GB","United Kingdom"], ["CA","Canada"], ["AU","Australia"], ["NG","Nigeria"], ["PH","Philippines"],
-  ["ID","Indonesia"], ["BR","Brazil"], ["DE","Germany"], ["FR","France"], ["AE","UAE"], ["SA","Saudi Arabia"],
-];
-const OFFER_DEVICES = [
-  ["user", null], ["all", null], ["android","Android"], ["ios","iOS"], ["mobile","Mobile (all)"], ["desktop","Desktop"],
-];
-
-function populateOfferFilters(){
-  const countrySel = document.getElementById("offerCountrySelect");
-  const deviceSel = document.getElementById("offerDeviceSelect");
-  countrySel.innerHTML = OFFER_COUNTRIES.map(([code, name])=>
-    `<option value="${code}">${code==="user" ? tr("offer_auto_location") : (code==="all" ? tr("offer_all_countries") : name)}</option>`).join("");
-  deviceSel.innerHTML = OFFER_DEVICES.map(([code, name])=>
-    `<option value="${code}">${code==="user" ? tr("offer_auto_device") : (code==="all" ? tr("offer_all_devices") : name)}</option>`).join("");
-  // ডিফল্ট হিসেবে "Auto" (ইউজারের আসল লোকেশন/ডিভাইস) সিলেক্ট থাকবে - এতে CPAlead
-  // শুরু থেকেই শুধু সত্যিকারের eligible অফার দেখায়, ক্লিক করলে "not available in your
-  // country" মেসেজ আসার ঝুঁকি থাকে না। "All" অপশন dropdown-এ থেকেই যাচ্ছে, কেউ
-  // ইচ্ছাকৃতভাবে ব্রাউজ করতে চাইলে বদলে নিতে পারবে।
-  countrySel.value = "user";
-  deviceSel.value = "user";
-  countrySel.addEventListener("change", loadCpaleadOffers);
-  deviceSel.addEventListener("change", loadCpaleadOffers);
-}
-
-function offerCardHTML(offer){
-  const countries = (offer.countries || []).slice(0, 4).join(", ") + ((offer.countries||[]).length > 4 ? "+" : "");
-  const device = (offer.device || "all").toUpperCase();
-  const instructions = offer.conversion || "";
-  const desc = offer.description || "";
-  return `
-    <div class="offer-card">
-      <div class="offer-card-top">
-        <div class="offer-card-info">
-          <div class="offer-title">${escapeHTML(offer.title || "")}</div>
-          ${instructions ? `<div class="offer-conversion">✅ ${escapeHTML(instructions)}</div>` : ""}
-          ${desc ? `<div class="offer-desc">${escapeHTML(desc)}</div>` : ""}
-        </div>
-        <div class="offer-reward">+$${Number(offer.amount || 0).toFixed(4)}</div>
-      </div>
-      <div class="offer-eligibility">
-        <span>🌍 ${escapeHTML(countries || "—")}</span>
-        <span>📱 ${escapeHTML(device)}</span>
-      </div>
-      <button class="offer-start-btn" data-offer-link="${escapeHTML(offer.link || "")}"
-        data-offer-id="${escapeHTML(String(offer.id ?? ""))}" data-offer-title="${escapeHTML(offer.title || "")}"
-        data-offer-amount="${Number(offer.amount || 0)}">${tr("offer_start")}</button>
-      <div class="offer-auto-note">${tr("offer_reward_auto")}</div>
-    </div>`;
-}
-
-function pendingCardHTML(item){
-  return `
-    <div class="offer-card pending-card">
-      <div class="offer-card-top">
-        <div class="offer-card-info">
-          <div class="offer-title">${escapeHTML(item.title || "Task")}</div>
-          <div class="offer-desc">${escapeHTML(tr("pending_note"))}</div>
-        </div>
-        <div class="offer-reward">+$${Number(item.amount || 0).toFixed(4)}</div>
-      </div>
-      <div class="offer-pending-badge">⏳ ${escapeHTML(tr("pending_tasks"))}</div>
-    </div>`;
-}
-
 function escapeHTML(str){
   const d = document.createElement("div");
   d.textContent = str == null ? "" : String(str);
   return d.innerHTML;
-}
-
-function renderOfferList(containerId, titleId, offers){
-  const container = document.getElementById(containerId);
-  const title = document.getElementById(titleId);
-  if(!offers || offers.length === 0){
-    container.innerHTML = "";
-    title.style.display = "none";
-    return;
-  }
-  title.style.display = "flex";
-  container.innerHTML = offers.map(offerCardHTML).join("");
-  container.querySelectorAll(".offer-start-btn").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const link = btn.getAttribute("data-offer-link");
-      const offerId = btn.getAttribute("data-offer-id");
-      const offerTitle = btn.getAttribute("data-offer-title");
-      const amount = parseFloat(btn.getAttribute("data-offer-amount") || "0");
-      if(offerId){
-        // ব্যাকগ্রাউন্ডে "Pending" হিসেবে রেকর্ড করা হচ্ছে - লিংক খোলার জন্য অপেক্ষা করানো হবে না
-        apiPost("/api/cpalead/track_start", { offer_id: offerId, title: offerTitle, amount: amount }).catch(()=>{});
-        state.knownPendingItems.set(offerId, { title: offerTitle, amount: amount });
-      }
-      if(!link) return;
-      if(tg && tg.openLink) tg.openLink(link); else window.open(link, "_blank");
-      setTimeout(loadPendingCpalead, 1500); // Pending সেকশনে সাথে সাথে দেখানোর চেষ্টা
-    });
-  });
-}
-
-/* ======================================================
-   PENDING CPALEAD TASKS
-   ইউজার "Start" চাপার পর এখানে "Pending" দেখায়, CPAlead postback দিয়ে verify হলে
-   (balance যোগ হওয়ার পর) এই লিস্ট থেকে নিজে থেকেই সরে যায় আর একটা toast দেখায়।
-   ====================================================== */
-async function loadPendingCpalead(){
-  try{
-    const res = await apiGet("/api/cpalead/pending");
-    const pending = (res && res.pending) || [];
-    const currentIds = new Set(pending.map(p => p.offer_id));
-    const newMap = new Map(pending.map(p => [p.offer_id, { title: p.title, amount: p.amount }]));
-
-    // আগে pending ছিল, এখন আর নেই - মানে ভেরিফাই হয়ে গেছে - প্রতিটার জন্য নাম+টাকাসহ toast দেখানো হবে
-    const verifiedIds = [...state.knownPendingItems.keys()].filter(id => !currentIds.has(id));
-    if(verifiedIds.length > 0){
-      verifiedIds.forEach(id => {
-        const item = state.knownPendingItems.get(id) || {};
-        const amountText = item.amount != null ? ` +$${Number(item.amount).toFixed(4)}` : "";
-        showToast(`✅ ${item.title || tr("reward_earned")}${amountText}`);
-      });
-      refreshBalanceOnly();
-    }
-    state.knownPendingItems = newMap;
-
-    const container = document.getElementById("pendingTasksList");
-    const title = document.getElementById("pendingTasksTitle");
-    if(pending.length === 0){
-      container.innerHTML = "";
-      title.style.display = "none";
-      return;
-    }
-    title.style.display = "flex";
-    container.innerHTML = pending.map(pendingCardHTML).join("");
-  } catch(e){
-    // চুপচাপ ব্যর্থ হবে, বাকি অ্যাপ স্বাভাবিক থাকবে
-  }
 }
 
 async function refreshBalanceOnly(){
@@ -1156,64 +1008,6 @@ async function refreshBalanceOnly(){
       renderAll();
     }
   } catch(e){}
-}
-
-async function loadCpaleadOffers(){
-  try{
-    const cfg = await apiGet("/api/cpalead/config");
-    if(!cfg || !cfg.enabled) return; // publisher_id সেট না থাকলে চুপচাপ কিছু দেখাবে না
-
-    state.cpaleadCfg = cfg;
-    document.getElementById("offerFilterBox").style.display = "block";
-    if(!document.getElementById("offerCountrySelect").options.length) populateOfferFilters();
-
-    const country = document.getElementById("offerCountrySelect").value || "user";
-    const device = document.getElementById("offerDeviceSelect").value || "user";
-
-    // "all" সিলেক্ট করলে সেই প্যারামিটারটাই URL থেকে বাদ দেওয়া হয় (CPAlead-এর
-    // ডকুমেন্টেশন অনুযায়ী country/device optional filter - বাদ দিলে সব দেশ/ডিভাইসের
-    // অফার একসাথে আসে, "all" নামে কোনো বিশেষ ভ্যালু তারা সাপোর্ট করে না)।
-    let url = `https://www.cpalead.com/api/offers?id=${encodeURIComponent(cfg.publisher_id)}`
-      + `&subid=${encodeURIComponent(cfg.subid)}`
-      + `&fields=id,title,description,conversion,device,link,amount,countries,payout_type,events`;
-    if(country !== "all") url += `&country=${encodeURIComponent(country)}`;
-    if(device !== "all") url += `&device=${encodeURIComponent(device)}`;
-
-    const res = await fetch(url);
-    const data = await res.json();
-    let offers = (data && data.offers) || [];
-
-    // কিছু offer flat 'amount'-এর বদলে ধাপে ধাপে 'events' লিস্ট ব্যবহার করে (যেমন
-    // "সাইনআপ করুন" + "$5 ডিপোজিট করুন" আলাদা আলাদা payout সহ) - CPAlead-এর docs
-    // অনুযায়ী events-এর amount আগে থেকেই publisher payout split হিসেবে দেওয়া থাকে।
-    // এমন offer-এ flat amount শূন্য/কম থাকতে পারে, তাই events থাকলে তার সবচেয়ে বড়
-    // ধাপের payout ব্যবহার করা হচ্ছে - যাতে "+$0.00" দেখিয়ে ভুলভাবে বাদ না পড়ে।
-    offers = offers.map(o => {
-      const events = o.events || [];
-      const maxEventAmount = events.length ? Math.max(...events.map(ev => Number(ev.amount || 0))) : 0;
-      const baseAmount = Number(o.amount || 0);
-      return { ...o, amount: Math.max(baseAmount, maxEventAmount) };
-    });
-
-    // CPAlead যে amount পাঠায় সেটা পুরোটা না, শুধু ইউজারের ভাগ (config.py-এর
-    // CPALEAD_USER_SHARE_PERCENT অনুযায়ী) - কার্ডে যা দেখানো হবে সেটাই আসলে ইউজার পাবে।
-    const sharePercent = cfg.user_share_percent != null ? cfg.user_share_percent : 100;
-    offers = offers.map(o => ({...o, amount: Number(o.amount || 0) * (sharePercent / 100)}));
-
-    const threshold = cfg.easy_max_reward != null ? cfg.easy_max_reward : 0.5;
-    // যে offer-এর reward আমাদের ভাগ কেটে নেওয়ার পর প্রায় শূন্য হয়ে যায় (যেমন CPAlead-এর
-    // এখনো সক্রিয় না হওয়া/placeholder অফার), সেগুলো ইউজারকে দেখানো হবে না -
-    // "+$0.0000" রিওয়ার্ডের কোনো কাজ দেখানো অন্যায্য।
-    offers = offers.filter(o => o.amount >= 0.0001);
-
-    const easy = offers.filter(o => o.amount < threshold);
-    const premium = offers.filter(o => o.amount >= threshold);
-
-    renderOfferList("easyTasksList", "easyTasksTitle", easy);
-    renderOfferList("premiumTasksList", "premiumTasksTitle", premium);
-  } catch(e){
-    // CPAlead আনরিচেবল হলেও বাকি অ্যাপ স্বাভাবিকভাবে কাজ করবে
-  }
 }
 
 function renderAll(){
@@ -1348,6 +1142,7 @@ async function handleTaskClick(task){
     const uiState = taskUIState[task.id] || { stage: "idle" };
     if(uiState.stage === "idle" || !uiState.stage){
       if(tg) tg.openLink(task.link_url); else window.open(task.link_url, "_blank");
+      apiPost(`/api/task/${task.id}/start`, {}).catch(()=>{}); // সার্ভার-সাইড টাইমস্ট্যাম্প - claim-এর সময় যাচাই হবে
       let remaining = task.wait_seconds || 15;
       taskUIState[task.id] = { stage: "waiting", countdown: remaining };
       renderTasks();
@@ -1393,6 +1188,14 @@ async function claimTask(task){
     showToast(tr("daily_limit_reached"));
     task.maxed = true;
     renderAll();
+    return;
+  }
+  if(res.error === "wait_not_complete" || res.error === "not_started"){
+    // সার্ভার-সাইড যাচাইয়ে আটকালো (ক্লায়েন্ট timer ও সার্ভারের হিসাবে সামান্য গরমিল/
+    // reload হওয়া ইত্যাদি বিরল কারণে) - ইউজারকে আবার শুরু থেকে করতে বলা হচ্ছে।
+    showToast(tr("please_wait"));
+    taskUIState[task.id] = { stage: "idle" };
+    renderTasks();
     return;
   }
   if(res.ok){

@@ -53,29 +53,6 @@ LANGUAGES = ["bn", "en", "ar"]
 DEFAULT_LANGUAGE = "en"
 
 # =========================================
-# CPAlead অফার ইন্টিগ্রেশন
-# =========================================
-# আপনার CPAlead Publisher ID (dashboard-এর টপে/Tools > API-তে পাবেন)
-CPALEAD_PUBLISHER_ID = os.environ.get("CPALEAD_PUBLISHER_ID", "").strip()
-
-# Postback ভেরিফাই করার সিক্রেট পাসওয়ার্ড - এটা নিজে একটা র‍্যান্ডম স্ট্রিং বসান,
-# আর CPAlead dashboard-এর Postback URL-এও ঠিক এটাই &password= এ বসাতে হবে।
-# ⚠️ bot token-এর মতোই এটাও Render-এর Environment Variables-এ রাখা ভালো, কোডে না।
-CPALEAD_POSTBACK_PASSWORD = os.environ.get("CPALEAD_POSTBACK_PASSWORD", "").strip()
-
-# Easy vs Premium ক্যাটাগরি ভাগ করার থ্রেশহোল্ড (এটা CPAlead-এর নিজস্ব ফিল্ড না -
-# এটা শুধু আমাদের অ্যাপের নিজস্ব লজিক, offer-এর "amount" এই মান থেকে কম হলে Easy,
-# বেশি/সমান হলে Premium ধরা হবে)
-CPALEAD_EASY_MAX_REWARD = 0.50
-
-# CPAlead থেকে আসা টাকার কত শতাংশ ইউজারকে দেওয়া হবে (বাকিটা প্ল্যাটফর্মের নিজের আয়)।
-# উদাহরণ: CPAlead যদি একটা offer-এর জন্য $1.00 পাঠায় আর এটা 70 করা থাকে,
-# তাহলে ইউজারের balance-এ $0.70 যোগ হবে, বাকি $0.30 প্ল্যাটফর্মের কাছে থেকে যাবে
-# (এটা এমনিতেই CPAlead আপনার নিজের অ্যাকাউন্টে পুরোটা জমা দেয় - এই সেটিং শুধু
-# ঠিক করে দেয় অ্যাপের ভেতরে ইউজারকে কত ভাগ দেখানো/দেওয়া হবে)।
-CPALEAD_USER_SHARE_PERCENT = 70
-
-# =========================================
 # AdsGram (Rewarded Video Ad Network)
 # =========================================
 # Postback URL-এ যাচাইয়ের জন্য secret (URL অনুমান করে ভুয়া রিকোয়েস্ট ঠেকাতে)
