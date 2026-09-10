@@ -67,6 +67,7 @@ TASKS = [
     {
         "id": "hilltop_direct",
         "title_key": "task_click",
+        "desc_key": "desc_hilltop_direct",
         "icon": "🖱️",
         "icon_class": "web",
         "reward": 0.0001,
