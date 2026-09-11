@@ -67,7 +67,6 @@ TASKS = [
     {
         "id": "hilltop_direct",
         "title_key": "task_click",
-        "desc_key": "desc_hilltop_direct",
         "icon": "🖱️",
         "icon_class": "web",
         "reward": 0.0001,
@@ -95,6 +94,7 @@ TASKS = [
     {
         "id": "adsgram_view",
         "title_key": "task_ad",
+        "desc_key": "desc_adsgram_view",
         "icon": "🎬",
         "icon_class": "ad",
         "reward": 0.0003,   # শুধু UI-তে দেখানোর জন্য - আসল reward config.py-এর
