@@ -3,6 +3,12 @@
 # নতুন কোনো অ্যাড নেটওয়ার্ক / অফার / ওয়েবসাইট টাস্ক যোগ করতে হলে
 # শুধু নিচের TASKS লিস্টে একটা নতুন এন্ট্রি যোগ করুন।
 # app.py বা database.py আলাদা করে বদলাতে হবে না।
+#
+# টাস্কের নিচে ছোট নির্দেশনা/শর্ত দেখাতে চাইলে "desc" ফিল্ডে সরাসরি
+# বাংলা টেক্সট লিখে দিন (নিচের install_getblock/adsgram_view দেখুন) -
+# এর জন্য index.html-এ আলাদা কিছু যোগ করা লাগবে না।
+# (শুধু "title" (টাস্কের নাম) এখনও index.html-এর translation
+# dictionary থেকে আসে, কারণ ওটা ৩ ভাষাতেই দেখাতে হয়।)
 # ============================================================
 
 # limit_type এর সম্ভাব্য মান:
@@ -80,7 +86,7 @@ TASKS = [
     {
         "id": "install_getblock",
         "title_key": "task_install_getblock",
-        "desc_key": "desc_install_getblock",
+        "desc": "লিংকে ক্লিক করে অ্যাপ ইনস্টল করুন, Google দিয়ে সাইন আপ করে ২ মিনিট অ্যাপে থাকুন।",
         "icon": "📲",
         "icon_class": "ad",
         "reward": 0.055,
@@ -94,7 +100,7 @@ TASKS = [
     {
         "id": "adsgram_view",
         "title_key": "task_ad",
-        "desc_key": "desc_adsgram_view",
+        "desc": "যেকোনো একটা এডে ক্লিক করুন, তারপর ৫ সেকেন্ড অপেক্ষা করুন।",
         "icon": "🎬",
         "icon_class": "ad",
         "reward": 0.0003,   # শুধু UI-তে দেখানোর জন্য - আসল reward config.py-এর
