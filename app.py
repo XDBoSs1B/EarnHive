@@ -539,8 +539,10 @@ def shortlink_list():
 
 
 def _shortlink_step_html(step, total_steps, code, wait_seconds, next_action, button_text, is_final=False):
-    """৩-ধাপের বিজ্ঞাপন পেজের একটা ধাপ - Adsterra কোড এখনো বসানো হয়নি বলে
-    'Ad Space' লেখা placeholder box দেখাচ্ছে।"""
+    """৩-ধাপের বিজ্ঞাপন পেজের একটা ধাপ। Adsterra-এর ৩টা অ্যাড কোড এখানে বসানো
+    আছে (native banner, ব্যানার, সোশ্যাল বার) - যদি ads দেখা না যায়, সেটা এই
+    কোডের সমস্যা না; Adsterra ড্যাশবোর্ডে ডোমেইন approve হয়েছে কিনা, বা
+    Telegram-এর in-app browser ব্লক করছে কিনা - এই দুটো আগে চেক করুন।"""
     action_js = f"completeAndRedirect('{next_action}')" if is_final else f"window.location.href='{next_action}'"
     return f"""<!DOCTYPE html>
 <html lang="en">
