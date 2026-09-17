@@ -1081,12 +1081,15 @@ function taskCardHTML(task){
 
   const subtitle = `${task.done_count}/${task.limit_count} ${task.limit_type === "daily" ? tr("today_label") : ""}`.trim();
 
-  const descLine = task.desc
-    ? `<div class="task-desc">${task.desc}</div>`
+  const descText = task.desc
+    ? (task.desc[currentLang] || task.desc.bn || task.desc.en || "")
+    : "";
+  const descLine = descText
+    ? `<div class="task-desc">${descText}</div>`
     : "";
 
   return `
-    <div class="task-card ${task.id}-card ${task.desc ? 'has-desc' : ''}">
+    <div class="task-card ${task.id}-card ${descText ? 'has-desc' : ''}">
       <div class="task-card-top">
         <div class="task-icon ${task.icon_class}">${task.icon}</div>
         <div class="task-info">
