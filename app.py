@@ -722,6 +722,97 @@ def adsgram_postback():
     return jsonify({"status": "success", "reward": reward})
 
 
+# =====================================================================
+# CPX RESEARCH — সার্ভে অফারওয়াল
+# ফ্লো: Mini App-এ ইউজার টাস্কে চাপলে /api/cpx/link থেকে স্বাক্ষরিত (secure_hash)
+# ব্যক্তিগত অফারওয়াল URL পাওয়া যায় -> সেটা bot-এর বাইরে (Telegram openLink) খোলা
+# হয় -> ইউজার সার্ভে শেষ করলে CPX নিজে থেকে আমাদের /api/cpx/postback কল করে ->
+# সেখানেই hash verify করে reward credit হয় (ক্লায়েন্ট কোনো claim কল করে না,
+# ঠিক AdsGram-এর মতোই async postback প্যাটার্ন)।
+# =====================================================================
+
+def cpx_signed_link(user_id):
+    h = hashlib.md5(f"{user_id}-{config.CPX_SECRET}".encode()).hexdigest()
+    return (
+        "https://offers.cpx-research.com/index.php"
+        f"?app_id={config.CPX_APP_ID}&ext_user_id={user_id}&secure_hash={h}"
+    )
+
+
+@app.route("/api/cpx/link", methods=["GET"])
+def cpx_link_endpoint():
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    if not config.CPX_SECRET:
+        return jsonify({"error": "not_configured"}), 503
+    return jsonify({"ok": True, "url": cpx_signed_link(auth_user["user_id"])})
+
+
+@app.route("/api/cpx/postback", methods=["GET"])
+def cpx_postback():
+    """
+    CPX ড্যাশবোর্ডের Postback Settings-এ এই URL বসাতে হবে:
+
+    {MINI_APP_BACKEND_URL}/api/cpx/postback?user_id={user_id}&amount={amount}
+        &trans_id={trans_id}&status={status}&secure_hash={secure_hash}
+
+    CPX নিজে থেকেই {user_id}/{amount}/{trans_id}/{status}/{secure_hash}
+    অংশগুলো আসল মান দিয়ে replace করে কল করে।
+    """
+    if not config.CPX_SECRET:
+        return jsonify({"status": "error", "message": "not_configured"}), 503
+
+    uid_raw = request.args.get("user_id", "").strip()
+    given_hash = request.args.get("secure_hash", "").lower().strip()
+    expected_hash = hashlib.md5(f"{uid_raw}-{config.CPX_SECRET}".encode()).hexdigest()
+    if not hmac.compare_digest(given_hash, expected_hash):
+        return jsonify({"status": "error", "message": "bad_hash"}), 403
+
+    if not uid_raw.isdigit():
+        return jsonify({"status": "error", "message": "bad_user_id"}), 400
+    user_id = int(uid_raw)
+
+    trans_id = request.args.get("trans_id", "").strip()
+    if not trans_id:
+        return jsonify({"status": "error", "message": "missing_trans_id"}), 400
+
+    user = db.get_user(user_id)
+    if not user:
+        return jsonify({"status": "error", "message": "user_not_found"}), 404
+
+    # status=2 মানে CPX পরে এই লেনদেনটা বাতিল/রিভার্স করেছে (যেমন ইউজার সার্ভেতে মিথ্যা
+    # তথ্য দিয়েছিল ধরা পড়লে) - আগে credited থাকলে সেই পরিমাণ ব্যালেন্স থেকে ফেরত নেওয়া হয়।
+    if request.args.get("status", "1") == "2":
+        db.reverse_cpx_transaction(trans_id)
+        return jsonify({"status": "success", "reversed": True})
+
+    try:
+        usd = float(request.args.get("amount", "0"))
+    except ValueError:
+        return jsonify({"status": "error", "message": "bad_amount"}), 400
+
+    credited = round(usd * config.CPX_USER_SHARE, 4)
+    inserted = db.record_cpx_transaction(trans_id, user_id, usd, credited)
+    if not inserted:
+        # একই trans_id আগে প্রসেস হয়ে গেছে (CPX মাঝে মাঝে postback retry করে) -
+        # দ্বিতীয়বার আর balance যোগ করা হচ্ছে না।
+        return jsonify({"status": "success", "duplicate": True})
+
+    db.add_balance(user_id, credited)
+    db.log_task_completion(user_id, "cpx_survey", credited)
+    distribute_referral_commission(user_id, credited)
+    try:
+        requests.post(f"{TELEGRAM_API}/sendMessage", json={
+            "chat_id": user_id,
+            "text": f"🎉 সার্ভে সম্পন্ন হয়েছে! +${credited:.4f} যোগ হয়েছে।"
+        }, timeout=5)
+    except Exception:
+        pass
+
+    return jsonify({"status": "success", "credited": credited})
+
+
 @app.route("/api/referral", methods=["GET"])
 def referral_info():
     auth_user = get_authed_user()

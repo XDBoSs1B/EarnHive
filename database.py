@@ -150,6 +150,21 @@ def init_db():
         )
     """)
 
+    # ---------- CPX Research ----------
+    # CPX-এর postback-এ আসা প্রতিটা সার্ভে-সম্পন্ন লেনদেনের রেকর্ড। trans_id UNIQUE
+    # হওয়ায় একই postback দুইবার এলে (CPX মাঝে মাঝে retry করে) দ্বিতীয়বার আর টাকা
+    # যোগ হবে না। reversed=1 মানে CPX পরে এই লেনদেনটা বাতিল করেছে (status=2 postback)।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS cpx_transactions (
+            trans_id TEXT PRIMARY KEY,
+            user_id BIGINT,
+            usd DOUBLE PRECISION,
+            credited DOUBLE PRECISION,
+            reversed INTEGER DEFAULT 0,
+            created_at TEXT
+        )
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -683,3 +698,42 @@ def record_adsgram_view(user_id, reward):
     conn.commit()
     cur.close()
     conn.close()
+
+
+# ---------- CPX Research ----------
+
+def record_cpx_transaction(trans_id, user_id, usd, credited):
+    """নতুন postback রেকর্ড করে। একই trans_id আগে থাকলে কিছু করে না (duplicate)।
+    True দিলে নতুন রেকর্ড হয়েছে (balance যোগ করা উচিত), False দিলে আগেই প্রসেস হয়ে গেছে।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO cpx_transactions (trans_id, user_id, usd, credited, created_at) "
+        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (trans_id) DO NOTHING",
+        (trans_id, user_id, usd, credited, datetime.utcnow().isoformat())
+    )
+    inserted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return inserted
+
+
+def reverse_cpx_transaction(trans_id):
+    """CPX থেকে রিভার্সাল (status=2) postback এলে, আগে credited থাকলে সেই পরিমাণ
+    ব্যালেন্স থেকে ফেরত নেয়। একই লেনদেন দ্বিতীয়বার রিভার্স হবে না (reversed ফ্ল্যাগ)।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, credited, reversed FROM cpx_transactions WHERE trans_id=%s", (trans_id,))
+    row = cur.fetchone()
+    if not row or row[2]:
+        cur.close()
+        conn.close()
+        return False
+    user_id, credited = row[0], row[1]
+    cur.execute("UPDATE cpx_transactions SET reversed=1 WHERE trans_id=%s", (trans_id,))
+    cur.execute("UPDATE users SET balance = balance - %s WHERE user_id=%s", (credited, user_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return True

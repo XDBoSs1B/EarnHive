@@ -80,3 +80,16 @@ PHOTO_UPLOAD_DAILY_LIMIT = 10
 # এখনো বিজ্ঞাপন (Adsterra ইত্যাদি) যোগ করা হয়নি বলে এটা এই মুহূর্তে একটা fixed
 # সংখ্যা - real বিজ্ঞাপন postback যোগ হলে এটাকেও dynamic করা যাবে।
 SHORTLINK_REWARD_PER_VIEW = 0.0003
+
+# =========================================
+# CPX Research (সার্ভে অফারওয়াল)
+# =========================================
+# CPX ড্যাশবোর্ডে আপনার App-এর আসল App ID বসান (37157 শুধু উদাহরণ, নিজেরটা মিলিয়ে নিন)
+CPX_APP_ID = os.environ.get("CPX_APP_ID", "37157").strip()
+
+# CPX ড্যাশবোর্ডের secure hash key - এটাও কোডে না লিখে Render-এর Environment
+# Variables-এ CPX_SECRET নামে বসাতে হবে
+CPX_SECRET = os.environ.get("CPX_SECRET", "").strip()
+
+# CPX থেকে আসা মোট আয়ের কত অংশ ইউজার পাবে (0.5 = ৫০%)
+CPX_USER_SHARE = float(os.environ.get("CPX_USER_SHARE", "0.5"))
