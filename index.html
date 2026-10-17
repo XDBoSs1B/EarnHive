@@ -157,6 +157,15 @@
   .task-title{ font-weight:700; font-size:14.5px; }
   .task-desc{ font-size:12.5px; line-height:1.55; color:var(--text-mid); background:var(--bg-2); border-radius:8px; padding:7px 9px; margin-top:10px; }
   .task-card.has-desc{ margin-bottom:16px; }
+  /* CPX-এর মতো পার্টনার "ব্যানার" কার্ড - সাদা বক্সে শুধু লোগো + তীর, টাস্কের মতো না */
+  .partner-wrap{ margin-bottom:12px; }
+  .partner-badge{ display:inline-block; font-size:12px; font-weight:800; padding:5px 14px; border-radius:999px; margin-bottom:8px; color:#fff; background:linear-gradient(90deg,#2f7bff,#18c27a); }
+  .partner-card{ display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-md); padding:12px; cursor:pointer; transition:transform 0.15s ease; }
+  .partner-card:active{ transform:scale(0.985); }
+  .partner-logo-box{ flex:1; min-width:0; height:64px; background:linear-gradient(135deg,#e8faf1,#d3f3e3); border-radius:14px; display:flex; align-items:center; justify-content:center; padding:8px 14px; overflow:hidden; }
+  .partner-logo-box img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .partner-logo-box span{ font-weight:800; font-size:20px; color:#0f5a3a; }
+  .partner-arrow{ font-size:22px; color:var(--text-mid); flex-shrink:0; padding:0 4px; }
   .task-reward{ font-size:12.5px; color:var(--accent-gold); margin-top:2px; font-weight:600; }
   .task-btn{
     border:none; padding:10px 18px; border-radius:12px; font-weight:800; font-size:12.5px;
@@ -389,6 +398,37 @@
   .nav-item.active{ color:#fff; background:rgba(255,255,255,0.08); }
   .nav-item.active .nav-icon{ transform:translateY(-1px); filter:drop-shadow(0 0 8px rgba(255,122,84,0.6)); }
 
+  /* ---------- ম্যানুয়াল রিভিউ আপলোড শিট ---------- */
+  .review-overlay{
+    position:fixed; inset:0; z-index:500; background:rgba(5,6,16,0.8);
+    display:none; align-items:flex-end; justify-content:center;
+  }
+  .review-overlay.show{ display:flex; }
+  .review-sheet{
+    width:100%; max-width:520px; max-height:92vh; overflow-y:auto;
+    background:var(--bg-1); border:1px solid rgba(255,255,255,0.1); border-bottom:none;
+    border-radius:var(--radius-lg) var(--radius-lg) 0 0; padding:20px 18px 28px;
+  }
+  .review-sheet-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .review-close{ background:rgba(255,255,255,0.08); border:none; color:var(--text-hi); width:34px; height:34px; border-radius:50%; font-size:16px; cursor:pointer; }
+  .review-how-title{ font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--text-low); font-weight:700; margin-bottom:8px; }
+  .review-instructions{
+    background:var(--bg-2); border-radius:var(--radius-sm); padding:12px 14px; font-size:13px;
+    line-height:1.65; color:var(--text-mid); white-space:pre-wrap; word-break:break-word; margin-bottom:16px;
+  }
+  .review-instructions a{ color:var(--accent-cyan); text-decoration:underline; }
+  .review-slot{ margin-bottom:14px; }
+  .review-slot-label{ font-size:13px; font-weight:700; margin-bottom:6px; }
+  .review-slot-box{
+    position:relative; border:1.5px dashed rgba(255,255,255,0.2); border-radius:var(--radius-sm);
+    min-height:84px; display:flex; align-items:center; justify-content:center;
+    color:var(--text-low); font-size:12.5px; cursor:pointer; overflow:hidden; background:rgba(255,255,255,0.03);
+  }
+  .review-slot-box.filled{ border-style:solid; border-color:var(--accent-cyan); }
+  .review-slot-box img{ width:100%; max-height:180px; object-fit:contain; display:block; }
+  .review-slot-box input{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .review-note{ min-height:70px; resize:vertical; font-family:inherit; }
+
   .page{ display:none; animation:fadeIn 0.25s ease; }
   .page.active{ display:block; }
   @keyframes fadeIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
@@ -586,6 +626,21 @@
 
 </div>
 
+<!-- ================= ম্যানুয়াল রিভিউ আপলোড শিট (manual_review টাস্কে ক্লিক করলে খোলে) ================= -->
+<div class="review-overlay" id="reviewOverlay">
+  <div class="review-sheet">
+    <div class="review-sheet-head">
+      <h3 class="display" id="reviewTitle" style="margin:0; font-size:17px;"></h3>
+      <button class="review-close" id="reviewCloseBtn" aria-label="Close">✕</button>
+    </div>
+    <div class="review-how-title" data-i="review_how">How to do this task</div>
+    <div class="review-instructions" id="reviewInstructions"></div>
+    <div id="reviewSlots"></div>
+    <textarea class="input-field review-note" id="reviewNote" maxlength="500"></textarea>
+    <button class="submit-btn" id="reviewSubmitBtn" data-i="review_submit">Submit</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="navbar">
@@ -635,6 +690,11 @@ const I18N = {
     task_website:"Visit Website", visit_site:"Visit", please_wait:"Wait", task_linklocker:"Sponsored Link",
     task_install_getblock:"Install App — GetBlock",
     task_cpx:"Surveys & Offers", cpx_reward_note:"Reward varies per survey — credited automatically",
+    review_submit:"Submit", review_pending:"Pending review", review_close:"Close",
+    review_note_placeholder:"Note (optional)", review_tap_upload:"Tap to choose a photo",
+    review_need_all:"Please upload all required photos", review_sent:"Submitted! Waiting for admin review",
+    review_failed:"Upload failed, please try again", review_already_pending:"You already have a submission under review",
+    review_sending:"Uploading...", review_how:"How to do this task",
     gate_title:"Join Our Channel", gate_desc:"You must join our official channel first to use EarnHive and start earning.",
     easy_tasks:"Easy Tasks", premium_tasks:"Premium Tasks", offer_start:"Start",
     offer_no_country:"Not available in your country/device right now", offer_reward_auto:"Tap Start, complete the steps on the offer page, reward is added automatically",
@@ -672,6 +732,11 @@ const I18N = {
     task_website:"ওয়েবসাইট ভিজিট করুন", visit_site:"ভিজিট করুন", please_wait:"অপেক্ষা করুন", task_linklocker:"স্পন্সর্ড লিংক",
     task_install_getblock:"অ্যাপ ইনস্টল করুন — GetBlock",
     task_cpx:"সার্ভে ও অফার", cpx_reward_note:"রিওয়ার্ড সার্ভে অনুযায়ী ভিন্ন হয় — স্বয়ংক্রিয়ভাবে যোগ হয়",
+    review_submit:"জমা দিন", review_pending:"রিভিউয়ের অপেক্ষায়", review_close:"বন্ধ করুন",
+    review_note_placeholder:"নোট (ঐচ্ছিক)", review_tap_upload:"ছবি বাছাই করতে ট্যাপ করুন",
+    review_need_all:"প্রয়োজনীয় সব ছবি আপলোড করুন", review_sent:"জমা হয়েছে! অ্যাডমিন রিভিউয়ের অপেক্ষায়",
+    review_failed:"আপলোড ব্যর্থ হয়েছে, আবার চেষ্টা করুন", review_already_pending:"আপনার একটি সাবমিশন ইতিমধ্যে রিভিউয়ের অপেক্ষায় আছে",
+    review_sending:"আপলোড হচ্ছে...", review_how:"কীভাবে কাজটি করবেন",
     gate_title:"আমাদের চ্যানেলে জয়েন করুন", gate_desc:"EarnHive ব্যবহার করে আয় শুরু করতে হলে আগে আমাদের অফিসিয়াল চ্যানেলে জয়েন করতে হবে।",
     easy_tasks:"সহজ টাস্ক", premium_tasks:"প্রিমিয়াম টাস্ক", offer_start:"শুরু করুন",
     offer_no_country:"আপনার দেশ/ডিভাইসের জন্য এখন এটা উপলব্ধ নেই", offer_reward_auto:"Start চাপুন, অফার পেজে যা লেখা আছে সেভাবে পূরণ/সম্পূর্ণ করুন, রিওয়ার্ড অটোমেটিক যোগ হয়ে যাবে",
@@ -709,6 +774,11 @@ const I18N = {
     task_website:"زيارة الموقع", visit_site:"زيارة", please_wait:"انتظر", task_linklocker:"رابط برعاية",
     task_install_getblock:"تثبيت التطبيق — GetBlock",
     task_cpx:"استبيانات وعروض", cpx_reward_note:"تختلف المكافأة حسب الاستبيان - تُضاف تلقائيًا",
+    review_submit:"إرسال", review_pending:"قيد المراجعة", review_close:"إغلاق",
+    review_note_placeholder:"ملاحظة (اختياري)", review_tap_upload:"اضغط لاختيار صورة",
+    review_need_all:"يرجى رفع جميع الصور المطلوبة", review_sent:"تم الإرسال! بانتظار مراجعة المسؤول",
+    review_failed:"فشل الرفع، حاول مرة أخرى", review_already_pending:"لديك طلب قيد المراجعة بالفعل",
+    review_sending:"جارٍ الرفع...", review_how:"كيفية تنفيذ المهمة",
     gate_title:"انضم إلى قناتنا", gate_desc:"يجب عليك الانضمام إلى قناتنا الرسمية أولاً لاستخدام EarnHive والبدء في الربح.",
     easy_tasks:"مهام سهلة", premium_tasks:"مهام مميزة", offer_start:"ابدأ",
     offer_no_country:"غير متاح في بلدك/جهازك الآن", offer_reward_auto:"اضغط ابدأ، أكمل الخطوات في صفحة العرض، وستتم إضافة المكافأة تلقائيًا",
@@ -1082,6 +1152,10 @@ function taskCardHTML(task){
     btnText = tr("visit_site");
   } else if(task.action_type === "cpx_wall"){
     btnText = tr("visit_site");
+  } else if(task.action_type === "manual_review"){
+    // অ্যাডমিন রিভিউর অপেক্ষায় সাবমিশন থাকলে বাটন বন্ধ + "Pending review" দেখায়
+    if(task.pending_review){ btnText = tr("review_pending"); disabled = true; }
+    else { btnText = tr("review_submit"); }
   }
 
   const subtitle = `${task.done_count}/${task.limit_count} ${task.limit_type === "daily" ? tr("today_label") : ""}`.trim();
@@ -1098,6 +1172,23 @@ function taskCardHTML(task){
   const rewardLine = task.action_type === "cpx_wall"
     ? tr("cpx_reward_note")
     : `+$${task.reward.toFixed(4)} · ${subtitle}`;
+
+  // CPX-এর মতো পার্টনার ওয়াল: টাস্ক-সারির বদলে সাদা লোগো-ব্যানার (বাকি টাস্কের কার্ড অপরিবর্তিত)
+  if(task.action_type === "cpx_wall"){
+    const nm = (task.banner_name || "").replace(/</g,"&lt;");
+    const logo = task.logo
+      ? `<img src="${task.logo}" alt="${nm}" onerror="this.parentNode.innerHTML='<span>${nm}</span>'">`
+      : `<span>${nm}</span>`;
+    const badge = task.badge ? `<div class="partner-badge">🔥 ${task.badge}</div>` : "";
+    return `
+    <div class="partner-wrap">
+      ${badge}
+      <div class="partner-card" id="btn-task-${task.id}">
+        <div class="partner-logo-box">${logo}</div>
+        <div class="partner-arrow">→</div>
+      </div>
+    </div>`;
+  }
 
   return `
     <div class="task-card ${task.id}-card ${descText ? 'has-desc' : ''}">
@@ -1219,8 +1310,172 @@ async function handleTaskClick(task){
     } catch(e){
       showToast("Connection error");
     }
+
+  } else if(task.action_type === "manual_review"){
+    // নির্দেশনা + স্ক্রিনশট আপলোডের শিট খোলে - reward এখানে না, অ্যাডমিন Approve করলে যোগ হয়
+    if(task.pending_review){ showToast(tr("review_already_pending")); return; }
+    openReviewSheet(task);
   }
 }
+
+/* ======================================================
+   ম্যানুয়াল রিভিউ আপলোড শিট
+   ====================================================== */
+const reviewState = { task:null, files:[], sending:false };
+
+function linkifyEscaped(text){
+  // আগে escape, তারপর শুধু http(s) লিংকগুলোকে ক্লিকযোগ্য করা (XSS ঝুঁকি ছাড়া)
+  return escapeHTML(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" data-ext-link="$1">$1</a>');
+}
+
+function openReviewSheet(task){
+  reviewState.task = task;
+  const labels = (task.screenshot_labels && task.screenshot_labels.length) ? task.screenshot_labels : [null];
+  reviewState.files = labels.map(()=>null);
+
+  document.getElementById("reviewTitle").textContent = tr(task.title_key);
+  const instr = task.instructions
+    ? (task.instructions[currentLang] || task.instructions.bn || task.instructions.en || "")
+    : (task.desc ? (task.desc[currentLang] || task.desc.bn || task.desc.en || "") : "");
+  document.getElementById("reviewInstructions").innerHTML = linkifyEscaped(instr);
+
+  document.getElementById("reviewSlots").innerHTML = labels.map((lab, i)=>{
+    const labelText = lab ? (lab[currentLang] || lab.bn || lab.en || "") : "";
+    return `
+      <div class="review-slot">
+        ${labelText ? `<div class="review-slot-label">${i+1}. ${escapeHTML(labelText)}</div>` : ""}
+        <div class="review-slot-box" id="reviewSlotBox${i}">
+          <span>${tr("review_tap_upload")}</span>
+          <input type="file" accept="image/*" data-slot="${i}">
+        </div>
+      </div>`;
+  }).join("");
+
+  document.querySelectorAll("#reviewSlots input[type=file]").forEach(inp=>{
+    inp.addEventListener("change", ()=>{
+      const i = Number(inp.dataset.slot);
+      const f = inp.files && inp.files[0];
+      const box = document.getElementById("reviewSlotBox" + i);
+      if(!f){ reviewState.files[i] = null; return; }
+      reviewState.files[i] = f;
+      box.classList.add("filled");
+      const old = box.querySelector("img, span");
+      if(old) old.remove();
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(f);
+      box.insertBefore(img, inp);
+    });
+  });
+
+  const note = document.getElementById("reviewNote");
+  note.value = "";
+  note.placeholder = tr("review_note_placeholder");
+  const btn = document.getElementById("reviewSubmitBtn");
+  btn.disabled = false;
+  btn.textContent = tr("review_submit");
+  document.getElementById("reviewOverlay").classList.add("show");
+}
+
+function closeReviewSheet(){
+  if(reviewState.sending) return;
+  document.getElementById("reviewOverlay").classList.remove("show");
+}
+
+document.getElementById("reviewCloseBtn").addEventListener("click", closeReviewSheet);
+document.getElementById("reviewOverlay").addEventListener("click", (e)=>{
+  if(e.target.id === "reviewOverlay") closeReviewSheet();
+});
+// নির্দেশনার ভেতরের লিংকগুলো Telegram-এর নিজস্ব ব্রাউজারে খুলবে
+document.getElementById("reviewInstructions").addEventListener("click", (e)=>{
+  const a = e.target.closest("a[data-ext-link]");
+  if(!a) return;
+  e.preventDefault();
+  const url = a.getAttribute("data-ext-link");
+  if(tg) tg.openLink(url); else window.open(url, "_blank");
+});
+
+function compressImage(file){
+  // বড় ছবি আপলোডে ধীর/ব্যর্থ হয় - তাই সর্বোচ্চ ১৬০০px করে JPEG বানিয়ে ছোট করা হয়;
+  // কোনো সমস্যা হলে মূল ফাইলটাই পাঠানো হয়।
+  return new Promise((resolve)=>{
+    try{
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = ()=>{
+        try{
+          const max = 1600;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob)=>{ URL.revokeObjectURL(url); resolve(blob || file); }, "image/jpeg", 0.85);
+        } catch(e){ resolve(file); }
+      };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    } catch(e){ resolve(file); }
+  });
+}
+
+document.getElementById("reviewSubmitBtn").addEventListener("click", async ()=>{
+  const task = reviewState.task;
+  if(!task || reviewState.sending) return;
+  if(reviewState.files.some(f=>!f)){ showToast(tr("review_need_all")); return; }
+
+  const btn = document.getElementById("reviewSubmitBtn");
+  reviewState.sending = true;
+  btn.disabled = true;
+  btn.textContent = tr("review_sending");
+  try{
+    const form = new FormData();
+    for(let i=0; i<reviewState.files.length; i++){
+      const blob = await compressImage(reviewState.files[i]);
+      form.append("screenshots", blob, `shot${i+1}.jpg`);
+    }
+    form.append("note", document.getElementById("reviewNote").value.trim());
+
+    // multipart পাঠানোর সময় Content-Type হাতে সেট করা যাবে না (ব্রাউজার boundary-সহ নিজে দেয়)
+    const res = await fetch(API_BASE + `/api/manual_review/${task.id}/submit`, {
+      method:"POST",
+      headers:{ "X-Telegram-Init-Data": initData() },
+      body: form
+    });
+    let data = {};
+    try{ data = await res.json(); } catch(e){}
+
+    if(data.ok){
+      task.pending_review = true;
+      reviewState.sending = false;
+      document.getElementById("reviewOverlay").classList.remove("show");
+      showToast(tr("review_sent"));
+      renderTasks();
+      return;
+    }
+    if(data.error === "already_pending"){
+      task.pending_review = true;
+      showToast(tr("review_already_pending"));
+      renderTasks();
+      reviewState.sending = false;
+      document.getElementById("reviewOverlay").classList.remove("show");
+      return;
+    }
+    if(data.error === "daily_limit_reached"){
+      showToast(tr("daily_limit_reached"));
+      task.maxed = true;
+      renderTasks();
+      reviewState.sending = false;
+      document.getElementById("reviewOverlay").classList.remove("show");
+      return;
+    }
+    showToast(tr("review_failed"));
+  } catch(e){
+    showToast(tr("review_failed"));
+  }
+  reviewState.sending = false;
+  btn.disabled = false;
+  btn.textContent = tr("review_submit");
+});
 
 async function claimTask(task){
   const res = await apiPost(`/api/task/${task.id}/claim`, {});

@@ -210,6 +210,10 @@ def get_tasks():
         task_data = {k: v for k, v in t.items() if k != "enabled"}
         task_data["done_count"] = done_count
         task_data["maxed"] = done_count >= limit_count
+        # ম্যানুয়াল রিভিউ টাস্কে ইউজারের অ্যাডমিন-রিভিউর অপেক্ষায় থাকা সাবমিশন আছে কিনা -
+        # থাকলে ফ্রন্টএন্ড "Pending review" দেখাবে (অন্য কোনো টাস্কের আচরণ এতে বদলায় না)।
+        if t.get("action_type") == "manual_review":
+            task_data["pending_review"] = db.count_pending_manual_review(user_id, t["id"]) > 0
         result.append(task_data)
     return jsonify({"tasks": result})
 
@@ -813,6 +817,123 @@ def cpx_postback():
     return jsonify({"status": "success", "credited": credited})
 
 
+# =====================================================================
+# ম্যানুয়াল রিভিউ টাস্ক (স্ক্রিনশট আপলোড -> "Ck" চ্যানেলে Approve/Cancel)
+# ফ্লো: Mini App-এ ইউজার স্ক্রিনশট জমা দেয় -> এখানে ছবিগুলো প্রাইভেট চ্যানেলে পাঠানো হয় ->
+# একটা কন্ট্রোল মেসেজে Approve/Cancel বাটন আসে -> অ্যাডমিন চাপলে handle_callback_query
+# (নিচে) reward দেয় বা বাতিল করে। reward শুধু Approve-এর সময়ই যোগ হয়।
+# =====================================================================
+
+MANUAL_REVIEW_MAX_FILE_BYTES = 8 * 1024 * 1024  # প্রতিটা ছবি সর্বোচ্চ ৮ MB
+
+
+@app.route("/api/manual_review/<task_id>/submit", methods=["POST"])
+def manual_review_submit(task_id):
+    auth_user = get_authed_user()
+    if not auth_user:
+        return jsonify({"error": "invalid_init_data"}), 401
+    user_id = auth_user["user_id"]
+
+    if not require_channel_member(user_id):
+        return jsonify({"error": "channel_not_joined", "channel": config.REQUIRED_CHANNEL}), 403
+
+    task = tasks_config.get_task_by_id(task_id)
+    if not task or not task.get("enabled", True) or task.get("action_type") != "manual_review":
+        return jsonify({"error": "task_not_found"}), 404
+
+    user = db.get_user(user_id)
+    if not user:
+        return jsonify({"error": "user_not_found"}), 404
+
+    # লিমিট: অ্যাপ্রুভ হওয়া + এখনো pending থাকা মিলিয়ে limit_count ছাড়ালে নতুন সাবমিশন নেওয়া হবে না
+    if task["limit_type"] == "daily":
+        done_count = db.get_task_completion_count_today(user_id, task_id)
+    else:
+        done_count = db.get_task_completion_count_ever(user_id, task_id)
+    pending = db.count_pending_manual_review(user_id, task_id)
+    if pending > 0:
+        return jsonify({"error": "already_pending"}), 400
+    if done_count >= task["limit_count"]:
+        return jsonify({"error": "daily_limit_reached"}), 400
+
+    # ফাইল যাচাই - কতগুলো স্লট দরকার (screenshot_labels-এর সংখ্যা, না থাকলে ১টা)
+    required = len(task.get("screenshot_labels", [])) or 1
+    required = min(required, config.MANUAL_REVIEW_MAX_SCREENSHOTS)
+    files = [f for f in request.files.getlist("screenshots") if f and f.filename]
+    if len(files) != required:
+        return jsonify({"error": "wrong_screenshot_count", "required": required}), 400
+
+    blobs = []
+    for f in files:
+        data = f.read()
+        if not data or len(data) > MANUAL_REVIEW_MAX_FILE_BYTES:
+            return jsonify({"error": "bad_file_size"}), 400
+        if not (f.mimetype or "").startswith("image/"):
+            return jsonify({"error": "not_an_image"}), 400
+        blobs.append((f.filename, data, f.mimetype))
+
+    note = (request.form.get("note") or "").strip()[:500]
+    chat_id = config.MANUAL_REVIEW_CHANNEL_ID
+    username = user.get("username") or "-"
+    caption = f"📝 ম্যানুয়াল রিভিউ\nটাস্ক: {task_id}\nUser: {user_id} (@{username})"
+    if note:
+        caption += f"\nনোট: {note}"
+
+    # ১) ছবিগুলো চ্যানেলে পাঠানো (একটা হলে sendPhoto, একাধিক হলে অ্যালবাম)
+    file_ids = []
+    try:
+        if len(blobs) == 1:
+            name, data, mime = blobs[0]
+            resp = requests.post(f"{TELEGRAM_API}/sendPhoto",
+                                 data={"chat_id": chat_id, "caption": caption},
+                                 files={"photo": (name, data, mime)}, timeout=30).json()
+            if not resp.get("ok"):
+                return jsonify({"error": "telegram_send_failed"}), 502
+            file_ids.append(resp["result"]["photo"][-1]["file_id"])
+        else:
+            media, files_payload = [], {}
+            for i, (name, data, mime) in enumerate(blobs):
+                key = f"file{i}"
+                item = {"type": "photo", "media": f"attach://{key}"}
+                if i == 0:
+                    item["caption"] = caption
+                media.append(item)
+                files_payload[key] = (name, data, mime)
+            resp = requests.post(f"{TELEGRAM_API}/sendMediaGroup",
+                                 data={"chat_id": chat_id, "media": json.dumps(media)},
+                                 files=files_payload, timeout=60).json()
+            if not resp.get("ok"):
+                return jsonify({"error": "telegram_send_failed"}), 502
+            for m in resp["result"]:
+                file_ids.append(m["photo"][-1]["file_id"])
+    except Exception:
+        return jsonify({"error": "telegram_send_failed"}), 502
+
+    # ২) ছবি পৌঁছানোর পরই DB-তে pending রেকর্ড (ছবি না গেলে কোনো রেকর্ড তৈরি হয় না)
+    submission_id = db.create_manual_review_submission(user_id, task_id, note, file_ids, task["reward"])
+
+    # ৩) Approve/Cancel বাটনসহ কন্ট্রোল মেসেজ
+    reply_markup = {"inline_keyboard": [[
+        {"text": "✅ Approve", "callback_data": f"mrapprove_{submission_id}"},
+        {"text": "❌ Cancel", "callback_data": f"mrreject_{submission_id}"},
+    ]]}
+    try:
+        ctrl = requests.post(f"{TELEGRAM_API}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": f"রিভিউ ID: {submission_id}\nটাস্ক: {task_id}\nUser: {user_id} (@{username})\n"
+                    f"রিওয়ার্ড: ${task['reward']:.4f}",
+            "reply_markup": reply_markup,
+        }, timeout=10).json()
+        if not ctrl.get("ok"):
+            db.update_manual_review_status(submission_id, "error")
+            return jsonify({"error": "telegram_send_failed"}), 502
+    except Exception:
+        db.update_manual_review_status(submission_id, "error")
+        return jsonify({"error": "telegram_send_failed"}), 502
+
+    return jsonify({"ok": True, "submission_id": submission_id})
+
+
 @app.route("/api/referral", methods=["GET"])
 def referral_info():
     auth_user = get_authed_user()
@@ -1017,6 +1138,45 @@ def handle_callback_query(callback_query):
         pass
 
     if from_user_id not in config.ADMIN_IDS:
+        return
+
+    if data.startswith("mrapprove_") or data.startswith("mrreject_"):
+        approve = data.startswith("mrapprove_")
+        try:
+            submission_id = int(data.split("_", 1)[1])
+        except ValueError:
+            return
+        submission = db.get_manual_review_submission(submission_id)
+
+        if not submission or submission["status"] != "pending":
+            try:
+                requests.post(f"{TELEGRAM_API}/editMessageText", json={
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "এই সাবমিশনটি ইতিমধ্যে প্রসেস করা হয়েছে।"
+                }, timeout=5)
+            except Exception:
+                pass
+            return
+
+        if approve:
+            reward = submission["reward"]
+            db.update_manual_review_status(submission_id, "approved")
+            db.add_balance(submission["user_id"], reward)
+            db.log_task_completion(submission["user_id"], submission["task_id"], reward)
+            distribute_referral_commission(submission["user_id"], reward)
+            tg_send_message(submission["user_id"], f"🎉 আপনার সাবমিশন Approve হয়েছে! ${reward:.4f} যোগ হয়েছে।")
+            result_text = f"✅ Approved: ID {submission_id} (${reward:.4f})"
+        else:
+            db.update_manual_review_status(submission_id, "rejected")
+            tg_send_message(submission["user_id"], "❌ দুঃখিত, আপনার সাবমিশনটি বাতিল করা হয়েছে। নির্দেশনা অনুযায়ী আবার চেষ্টা করুন।")
+            result_text = f"❌ Cancelled: ID {submission_id}"
+
+        try:
+            requests.post(f"{TELEGRAM_API}/editMessageText", json={
+                "chat_id": chat_id, "message_id": message_id, "text": result_text
+            }, timeout=5)
+        except Exception:
+            pass
         return
 
     if data.startswith("photoapprove_") or data.startswith("photoreject_"):

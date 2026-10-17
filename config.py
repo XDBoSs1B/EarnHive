@@ -84,12 +84,25 @@ SHORTLINK_REWARD_PER_VIEW = 0.0003
 # =========================================
 # CPX Research (সার্ভে অফারওয়াল)
 # =========================================
-# CPX ড্যাশবোর্ডে আপনার App-এর আসল App ID বসান (37157 শুধু উদাহরণ, নিজেরটা মিলিয়ে নিন)
+# CPX ড্যাশবোর্ডে কনফার্ম করা আসল App ID (Earn_Hive অ্যাপের পেজ থেকে নেওয়া)
 CPX_APP_ID = os.environ.get("CPX_APP_ID", "37157").strip()
 
-# CPX ড্যাশবোর্ডের secure hash key - এটাও কোডে না লিখে Render-এর Environment
-# Variables-এ CPX_SECRET নামে বসাতে হবে
-CPX_SECRET = os.environ.get("CPX_SECRET", "").strip()
+# CPX ড্যাশবোর্ডের Secure Hash Key (Earn_Hive অ্যাপের Frame Integration কোড থেকে নেওয়া)।
+# চাইলে পরে Render-এর Environment Variables-এ CPX_SECRET নামে বসিয়ে এই ডিফল্ট মান
+# ওভাররাইড করা যাবে, কিন্তু এখন env var না থাকলেও এই ডিফল্ট মান দিয়েই কাজ করবে।
+CPX_SECRET = os.environ.get("CPX_SECRET", "tZKCxTVk6hcigmRpGzsFxxApEk7geZjI").strip()
 
 # CPX থেকে আসা মোট আয়ের কত অংশ ইউজার পাবে (0.5 = ৫০%)
 CPX_USER_SHARE = float(os.environ.get("CPX_USER_SHARE", "0.5"))
+
+# =========================================
+# ম্যানুয়াল রিভিউ টাস্ক সিস্টেম (স্ক্রিনশট আপলোড -> প্রাইভেট চ্যানেলে Approve/Cancel)
+# =========================================
+# "Ck" প্রাইভেট চ্যানেলের ID (স্ক্রিনশটে দেখানো আসল ID: 3734081719)।
+# Telegram Bot API-তে চ্যানেলে মেসেজ পাঠাতে হলে chat_id-এর শুরুতে -100 বসাতে হয়,
+# তাই এখানে পুরো ফরম্যাট করা মান রাখা হলো। বটকে অবশ্যই এই চ্যানেলের Admin হতে হবে
+# (তুমি কনফার্ম করেছ বট ইতিমধ্যে Admin আছে)।
+MANUAL_REVIEW_CHANNEL_ID = int(os.environ.get("MANUAL_REVIEW_CHANNEL_ID", "-1003734081719"))
+
+# একটা সাবমিশনে সর্বোচ্চ কতগুলো স্ক্রিনশট আপলোড করা যাবে
+MANUAL_REVIEW_MAX_SCREENSHOTS = 3

@@ -165,6 +165,25 @@ def init_db():
         )
     """)
 
+    # ---------- ম্যানুয়াল রিভিউ টাস্ক (স্ক্রিনশট আপলোড -> অ্যাডমিন চ্যানেলে Approve/Cancel) ----------
+    # যে টাস্কগুলো Telegram API দিয়ে স্বয়ংক্রিয়ভাবে যাচাই করা যায় না (যেমন অন্য কোনো বটে
+    # /start দেওয়া), সেগুলোর জন্য ইউজার স্ক্রিনশট প্রমাণ জমা দেয়, অ্যাডমিন ম্যানুয়ালি
+    # Approve/Reject করলে তখনই reward দেওয়া হয়। screenshots কলামে Telegram file_id-গুলো
+    # কমা দিয়ে আলাদা করে রাখা হয় (একাধিক ছবি একসাথে পাঠানোর পর প্রতিটার file_id সেভ হয়)।
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS manual_review_submissions (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            task_id TEXT,
+            note TEXT,
+            screenshots TEXT,
+            reward DOUBLE PRECISION DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            submitted_at TEXT,
+            reviewed_at TEXT
+        )
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -717,6 +736,59 @@ def record_cpx_transaction(trans_id, user_id, usd, credited):
     cur.close()
     conn.close()
     return inserted
+
+
+def create_manual_review_submission(user_id, task_id, note, screenshot_file_ids, reward):
+    """নতুন স্ক্রিনশট সাবমিশন 'pending' অবস্থায় তৈরি করে, নতুন রো-এর id ফেরত দেয়।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO manual_review_submissions (user_id, task_id, note, screenshots, reward, status, submitted_at) "
+        "VALUES (%s, %s, %s, %s, %s, 'pending', %s) RETURNING id",
+        (user_id, task_id, note, ",".join(screenshot_file_ids), reward, datetime.utcnow().isoformat())
+    )
+    new_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return new_id
+
+
+def get_manual_review_submission(submission_id):
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM manual_review_submissions WHERE id=%s", (submission_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_manual_review_status(submission_id, status):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE manual_review_submissions SET status=%s, reviewed_at=%s WHERE id=%s",
+        (status, datetime.utcnow().isoformat(), submission_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def count_pending_manual_review(user_id, task_id):
+    """এই টাস্কে ইউজারের এখনো 'pending' অবস্থায় (অ্যাডমিন রিভিউর অপেক্ষায়) থাকা
+    সাবমিশন কয়টা - লিমিট চেক আর 'Pending review' ব্যাজ দেখানোর জন্য।"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM manual_review_submissions WHERE user_id=%s AND task_id=%s AND status='pending'",
+        (user_id, task_id)
+    )
+    cnt = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return cnt
 
 
 def reverse_cpx_transaction(trans_id):
