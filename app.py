@@ -735,12 +735,17 @@ def adsgram_postback():
 # ঠিক AdsGram-এর মতোই async postback প্যাটার্ন)।
 # =====================================================================
 
-def cpx_signed_link(user_id):
+def cpx_signed_link(user_id, username=""):
     h = hashlib.md5(f"{user_id}-{config.CPX_SECRET}".encode()).hexdigest()
-    return (
+    url = (
         "https://offers.cpx-research.com/index.php"
         f"?app_id={config.CPX_APP_ID}&ext_user_id={user_id}&secure_hash={h}"
     )
+    # CPX ডকুমেন্টেশনে username "recommended" - ইউজার চেনার সুবিধার জন্য (থাকলে যোগ হয়)
+    if username:
+        from urllib.parse import quote
+        url += f"&username={quote(str(username), safe='')}"
+    return url
 
 
 @app.route("/api/cpx/link", methods=["GET"])
@@ -750,7 +755,7 @@ def cpx_link_endpoint():
         return jsonify({"error": "invalid_init_data"}), 401
     if not config.CPX_SECRET:
         return jsonify({"error": "not_configured"}), 503
-    return jsonify({"ok": True, "url": cpx_signed_link(auth_user["user_id"])})
+    return jsonify({"ok": True, "url": cpx_signed_link(auth_user["user_id"], auth_user.get("username") or "")})
 
 
 @app.route("/api/cpx/postback", methods=["GET"])
@@ -1014,8 +1019,10 @@ def request_withdraw():
 # Polling-এর বদলে Telegram নিজে থেকেই এই URL-এ প্রতিটা মেসেজ/বাটন-ক্লিক পাঠাবে।
 # সিকিউরিটির জন্য URL-এর মধ্যেই বট টোকেন ব্যবহার করা হয়েছে (অনুমান করা কঠিন করতে)।
 
-def tg_send_message(chat_id, text, reply_markup=None):
+def tg_send_message(chat_id, text, reply_markup=None, parse_mode=None):
     payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
     try:
@@ -1035,34 +1042,78 @@ def is_channel_member(user_id):
         return False
 
 
+WELCOME_TEXTS = {
+    "en": {
+        "open_title": "🐝 <b>Welcome to EarnHive!</b>",
+        "open_body": "Complete simple tasks, watch ads, take surveys and earn real money — withdraw anytime.\n\n"
+                     "📢 Don't miss updates, payment proofs and new tasks — stay with our <b>official channel</b>.",
+        "btn_open": "🚀 Open EarnHive",
+        "btn_channel": "📢 Official Channel",
+        "join_body": "To use EarnHive you must join our <b>official channel</b> first.\n\n"
+                     "1️⃣ Tap <b>Join Official Channel</b>\n2️⃣ Then tap <b>I've Joined - Verify</b>",
+        "btn_join": "📢 Join Official Channel",
+        "btn_verify": "✅ I've Joined - Verify",
+    },
+    "bn": {
+        "open_title": "🐝 <b>EarnHive-এ স্বাগতম!</b>",
+        "open_body": "সহজ টাস্ক, বিজ্ঞাপন দেখা আর সার্ভে করে আসল টাকা আয় করুন — যখন খুশি উইথড্র করুন।\n\n"
+                     "📢 নতুন টাস্ক, আপডেট আর পেমেন্ট প্রুফ পেতে আমাদের <b>অফিসিয়াল চ্যানেলে</b> থাকুন।",
+        "btn_open": "🚀 EarnHive খুলুন",
+        "btn_channel": "📢 অফিসিয়াল চ্যানেল",
+        "join_body": "EarnHive ব্যবহার করতে আগে আমাদের <b>অফিসিয়াল চ্যানেলে</b> জয়েন করতে হবে।\n\n"
+                     "1️⃣ <b>অফিসিয়াল চ্যানেলে জয়েন করুন</b> বাটনে চাপ দিন\n2️⃣ তারপর <b>জয়েন করেছি - ভেরিফাই</b> চাপ দিন",
+        "btn_join": "📢 অফিসিয়াল চ্যানেলে জয়েন করুন",
+        "btn_verify": "✅ জয়েন করেছি - ভেরিফাই",
+    },
+    "ar": {
+        "open_title": "🐝 <b>مرحبًا بك في EarnHive!</b>",
+        "open_body": "أكمل مهام بسيطة، شاهد الإعلانات وأجب عن الاستبيانات واربح مالًا حقيقيًا — واسحب في أي وقت.\n\n"
+                     "📢 لا تفوّت التحديثات وإثباتات الدفع والمهام الجديدة — ابقَ مع <b>قناتنا الرسمية</b>.",
+        "btn_open": "🚀 افتح EarnHive",
+        "btn_channel": "📢 القناة الرسمية",
+        "join_body": "لاستخدام EarnHive يجب أن تنضم إلى <b>قناتنا الرسمية</b> أولاً.\n\n"
+                     "1️⃣ اضغط <b>انضم إلى القناة الرسمية</b>\n2️⃣ ثم اضغط <b>انضممت - تحقق</b>",
+        "btn_join": "📢 انضم إلى القناة الرسمية",
+        "btn_verify": "✅ انضممت - تحقق",
+    },
+}
+
+
+def _welcome_lang(user_id):
+    """ইউজারের সেভ করা ভাষা (না পেলে en)।"""
+    try:
+        u = db.get_user(user_id)
+        lang = (u or {}).get("language") or "en"
+        return lang if lang in WELCOME_TEXTS else "en"
+    except Exception:
+        return "en"
+
+
 def send_open_app_message(chat_id, start_param=""):
     web_app_url = config.MINI_APP_URL
     if start_param:
         web_app_url = f"{config.MINI_APP_URL}?start_param={start_param}"
+    channel_username = config.REQUIRED_CHANNEL.lstrip("@")
+    t = WELCOME_TEXTS[_welcome_lang(chat_id)]
     reply_markup = {
-        "inline_keyboard": [[
-            {"text": "🚀 Open EarnHive", "web_app": {"url": web_app_url}}
-        ]]
+        "inline_keyboard": [
+            [{"text": t["btn_open"], "web_app": {"url": web_app_url}}],
+            [{"text": t["btn_channel"], "url": f"https://t.me/{channel_username}"}],
+        ]
     }
-    tg_send_message(chat_id, "🎉 Welcome to EarnHive!\n\nTap the button below to open the app and start earning.", reply_markup)
+    tg_send_message(chat_id, f"{t['open_title']}\n\n{t['open_body']}", reply_markup, parse_mode="HTML")
 
 
 def send_join_channel_message(chat_id, user_id, start_param=""):
     channel_username = config.REQUIRED_CHANNEL.lstrip("@")
+    t = WELCOME_TEXTS[_welcome_lang(user_id)]
     reply_markup = {
         "inline_keyboard": [
-            [{"text": "📢 Join Channel", "url": f"https://t.me/{channel_username}"}],
-            [{"text": "✅ I've Joined - Verify", "callback_data": f"checkjoin_{start_param}"}]
+            [{"text": t["btn_join"], "url": f"https://t.me/{channel_username}"}],
+            [{"text": t["btn_verify"], "callback_data": f"checkjoin_{start_param}"}]
         ]
     }
-    tg_send_message(
-        chat_id,
-        "🎉 Welcome to EarnHive!\n\n"
-        "You need to join our official channel before using the app.\n\n"
-        "1️⃣ Join the channel below\n"
-        "2️⃣ Then tap \"I've Joined\"",
-        reply_markup
-    )
+    tg_send_message(chat_id, f"{t['open_title']}\n\n{t['join_body']}", reply_markup, parse_mode="HTML")
 
 
 def handle_start_command(message):
